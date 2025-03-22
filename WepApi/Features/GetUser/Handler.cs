@@ -1,11 +1,15 @@
 ﻿using Marten.Events.Aggregation;
-using Marten.Services.Json.Transformations;
 
-namespace WepApi.Features;
+namespace WepApi.Features.GetUser;
 
-public class GetUsers
-{
+public record Request();
+public record Response();
+public class Handler { 
+    public Response Handle(Request request){
+		return new Response();
+    }
 }
+
 
 public class GetUserProjection : SingleStreamProjection<User>
 {
