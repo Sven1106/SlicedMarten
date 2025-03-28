@@ -1,9 +1,5 @@
 ﻿namespace WepApi.Features;
-
+public record UserRenamed(Guid UserId, string NewName);
 public class RenameUser
 {
-    public static class V1
-    {
-        public record UserRenamed(string UserId, string NewName);
-    }
 }

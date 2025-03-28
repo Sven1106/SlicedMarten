@@ -1,4 +1,20 @@
+using Marten;
+using Marten.Events.Projections;
+using WepApi.Domain;
+using WepApi.Features;
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddMarten(opts =>
+{
+    opts.Connection(builder.Configuration.GetConnectionString("marten"));
+
+    // Write
+    opts.Projections.LiveStreamAggregation<UserAggregate>();
+
+    // Read
+    opts.Projections.Add<GetUserProjection>(ProjectionLifecycle.Inline);
+});
+
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
