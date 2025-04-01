@@ -6,14 +6,12 @@ using WepApi.Features;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMarten(opts =>
 {
-    opts.Connection(builder.Configuration.GetConnectionString("marten"));
-
+    opts.Connection(builder.Configuration.GetConnectionString("Marten"));
     // Write
-    opts.Projections.LiveStreamAggregation<UserAggregate>();
-
+    opts.Projections.LiveStreamAggregation<User>();
     // Read
     opts.Projections.Add<GetUserProjection>(ProjectionLifecycle.Inline);
-});
+}).UseLightweightSessions();
 
 
 // Add services to the container.
@@ -50,6 +48,21 @@ app.MapGet("/weatherforecast", () =>
         return forecast;
     })
     .WithName("GetWeatherForecast")
+    .WithOpenApi();
+
+app.MapGet("/users/{id:guid}", (Guid id) =>
+    {
+        return;
+    })
+    .WithName("GetUser")
+    .WithOpenApi();
+
+app.MapPost("/users/", async (RegisterUserRequest request, IDocumentSession session) =>
+    {
+        RegisterUserHandler registerUserHandler = new(session);
+        return await registerUserHandler.Handle(request);
+    })
+    .WithName("RegisterUser")
     .WithOpenApi();
 
 app.Run();
