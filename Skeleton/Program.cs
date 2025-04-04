@@ -1,23 +1,32 @@
+using System.Text.Json.Serialization;
 using Marten;
-using Marten.Events.Aggregation;
+using Marten.Events.Daemon.Resiliency;
 using Marten.Events.Projections;
+using Skeleton;
+using Skeleton.Endpoints;
 using Weasel.Core;
 
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddMarten(opts =>
-{
-    opts.Connection(builder.Configuration.GetConnectionString("Marten"));
+    {
+        opts.Connection(builder.Configuration.GetConnectionString("Marten"));
+        opts.Projections.Add<InventoryItemDetailsProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.Add<InventoryItemSummaryProjection>(ProjectionLifecycle.Inline);
+        // opts.Projections.Add<OrderOverviewProjection>(ProjectionLifecycle.Async);
+        opts.Projections.Add<UserGroupsAssignmentProjection>(ProjectionLifecycle.Async);
 
-    // 👇 Projection registration
-    opts.Projections.Add<PlayerProfileProjection>(ProjectionLifecycle.Inline);
-    opts.AutoCreateSchemaObjects = AutoCreate.All;
-})
-.UseLightweightSessions();
+        opts.AutoCreateSchemaObjects = AutoCreate.All;
+        opts.Projections.UseIdentityMapForAggregates = true;
+    })
+    .UseLightweightSessions()
+    .AddAsyncDaemon(DaemonMode.Solo);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.ConfigureHttpJsonOptions(options => { options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options => { options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 
 var app = builder.Build();
 
@@ -29,54 +38,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// ✅ Minimal API endpoint
-
-
-app.MapPost("/players/register", async (string displayName, IDocumentSession session) =>
-{
-    var playerId = Guid.NewGuid();
-    var @event = new PlayerRegistered(playerId, displayName);
-
-    session.Events.StartStream<PlayerAggregate>(playerId, @event);
-    await session.SaveChangesAsync();
-
-    return Results.Ok(new { playerId });
-})
-.WithName("RegisterPlayer")
-.WithDescription("Register a new player with a display name.")
-.Produces(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest);
+app.MapAllEndpoints();
 
 app.Run();
-public record RegisterPlayerRequest(string DisplayName);
-
-// 📦 Event
-public record PlayerRegistered(Guid PlayerId, string DisplayName);
-
-// 🧱 Aggregate state (immutable record)
-public record PlayerAggregate(Guid Id, string DisplayName)
-{
-    public static PlayerAggregate Create(PlayerRegistered @event) =>
-        new(@event.PlayerId, @event.DisplayName);
-}
-
-// 👁️ Projection model
-public record PlayerProfile
-{
-    public Guid Id { get; init; }
-    public string DisplayName { get; init; }
-}
-
-// 👁️ Projection logic
-public class PlayerProfileProjection : SingleStreamProjection<PlayerProfile>
-{
-    public PlayerProfileProjection()
-    {
-        ProjectEvent<PlayerRegistered>((e, _) =>
-            new PlayerProfile
-            {
-                Id = e.Id,
-                DisplayName = e.DisplayName
-            });
-    }
-}

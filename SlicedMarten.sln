@@ -2,7 +2,9 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WepApi", "WepApi\WepApi.csproj", "{75454D25-C655-406A-8A7E-2484C4C44EAE}"
 EndProject
-Project("{0214f7d3-d939-4b76-a842-bfeb3c12f0ce}") = "Skeleton", "Skeleton\Skeleton.csproj", "{0214f7d3-d939-4b76-a842-bfeb3c12f0ce}"
+Project("{0214F7D3-D939-4B76-A842-BFEB3C12F0CE}") = "Skeleton", "Skeleton\Skeleton.csproj", "{0214F7D3-D939-4B76-A842-BFEB3C12F0CE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SourceGenerator", "SourceGenerator\SourceGenerator.csproj", "{1780088F-1B65-4E24-B91D-9BF3E6281E2E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,5 +21,9 @@ Global
 		{0214f7d3-d939-4b76-a842-bfeb3c12f0ce}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0214f7d3-d939-4b76-a842-bfeb3c12f0ce}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0214f7d3-d939-4b76-a842-bfeb3c12f0ce}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1780088F-1B65-4E24-B91D-9BF3E6281E2E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1780088F-1B65-4E24-B91D-9BF3E6281E2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1780088F-1B65-4E24-B91D-9BF3E6281E2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1780088F-1B65-4E24-B91D-9BF3E6281E2E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
