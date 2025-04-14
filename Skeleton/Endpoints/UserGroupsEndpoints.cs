@@ -14,12 +14,12 @@ public abstract class UserGroupsEndpoints : IEndpoint
 {
     public static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        // POST /user-groups/register
+        // POST /user/register
         endpoints.MapPost("/user/register", async (RegisterUserRequest request, IDocumentSession session) =>
         {
             var userId = Guid.NewGuid();
             var @event = new UserRegisteredEvent(userId, request.Email);
-            session.Events.StartStream<UserGroupsAssignmentViewModel>(userId, @event);
+            session.Events.StartStream(userId, @event); // User stream
             await session.SaveChangesAsync();
             return Results.Created($"/user/{userId}", new { userId });
         });
@@ -28,23 +28,19 @@ public abstract class UserGroupsEndpoints : IEndpoint
         endpoints.MapPost("/user-groups/assign", async (AssignUsersToRandomUserGroupRequest request, IDocumentSession session) =>
         {
             var groupId = Guid.NewGuid();
-            var @event = new MultipleUsersAssignedToGroupEvent(groupId, request.UserIds);
-            foreach (var userId in request.UserIds)
-            {
-                session.Events.Append(userId, @event);
-            }
-
+            var @event = new UsersAssignedToGroup(groupId, request.UserIds);
+            session.Events.StartStream(groupId, @event); // UserGroup stream
             await session.SaveChangesAsync();
-            return Results.Accepted();
+            return Results.Created($"/user-groups/{groupId}", new { groupId });
         });
 
-        // GET /user-groups/{userId}
-        endpoints.MapGet("/user-groups/{userId:guid}", async (Guid userId, IQuerySession query) =>
+        // GET /user-groups/{groupId}
+        endpoints.MapGet("/user-groups/{groupId:guid}", async (Guid groupId, IQuerySession query) =>
         {
-            var result = await query.LoadAsync<UserGroupsAssignmentViewModel>(userId);
+            var result = await query.LoadAsync<UserGroupOverview>(groupId);
             return result is null
                 ? Results.NotFound()
-                : Results.Ok(new UserGroupsAssignmentViewModel(result.UserId, result.GroupIds));
+                : Results.Ok(result);
         });
     }
 }
@@ -52,74 +48,137 @@ public abstract class UserGroupsEndpoints : IEndpoint
 //Events
 public record UserRegisteredEvent(Guid UserId, string Email);
 
-public record MultipleUsersAssignedToGroupEvent(Guid GroupId, List<Guid> UserIds);
-
+public record UsersAssignedToGroup(Guid GroupId, List<Guid> UserIds);
 // Viewmodel
 
-public record UserGroupsAssignmentViewModel(Guid UserId, List<Guid> GroupIds);
-
-public class UserGroupsAssignmentProjection : MultiStreamProjection<UserGroupsAssignmentViewModel, Guid>
+public record UserGroupOverview(Guid Id, List<UserGroupOverview.UserDto> Users)
 {
-    public class CustomSlicer : IEventSlicer<UserGroupsAssignmentViewModel, Guid>
-    {
-        public ValueTask<IReadOnlyList<EventSlice<UserGroupsAssignmentViewModel, Guid>>> SliceInlineActions(IQuerySession querySession, IEnumerable<StreamAction> streams)
-        {
-            throw new NotImplementedException();
-        }
-
-        public ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupsAssignmentViewModel, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
-        {
-            var group = new TenantSliceGroup<UserGroupsAssignmentViewModel, Guid>(Tenant.ForDatabase(querySession.Database));
-            group.AddEvents<UserRegisteredEvent>(@event => @event.UserId, events);
-            group.AddEvents<MultipleUsersAssignedToGroupEvent>(@event => @event.UserIds, events);
-
-            return new ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupsAssignmentViewModel, Guid>>>(new List<TenantSliceGroup<UserGroupsAssignmentViewModel, Guid>> { group });
-        }
-    }
-
-    public UserGroupsAssignmentProjection()
-    {
-        CustomGrouping(new CustomSlicer());
-    }
-
-    public static UserGroupsAssignmentViewModel Create(UserRegisteredEvent e) => new(e.UserId, []);
-
-    public static UserGroupsAssignmentViewModel Apply(UserGroupsAssignmentViewModel view, MultipleUsersAssignedToGroupEvent e) => view with
-    {
-        GroupIds = view.GroupIds.Contains(e.GroupId) ? view.GroupIds : view.GroupIds.Append(e.GroupId).ToList()
-    };
+    public record UserDto(Guid UserId, string Email);
 }
 
-public record UserGroupView(Guid GroupId, List<Guid> UserIds);
-
-public class UserGroupProjection : MultiStreamProjection<UserGroupView, Guid>
+public class UserGroupOverviewProjection : MultiStreamProjection<UserGroupOverview, Guid>
 {
-    public class CustomSlicer : IEventSlicer<UserGroupView, Guid>
+    public UserGroupOverviewProjection()
     {
-        public ValueTask<IReadOnlyList<EventSlice<UserGroupView, Guid>>> SliceInlineActions(IQuerySession querySession, IEnumerable<StreamAction> streams)
-        {
-            throw new NotImplementedException();
-        }
-
-        public ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupView, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
-        {
-            var group = new TenantSliceGroup<UserGroupView, Guid>(Tenant.ForDatabase(querySession.Database));
-            group.AddEvents<MultipleUsersAssignedToGroupEvent>(e => e.GroupId, events);
-
-            return new(new List<TenantSliceGroup<UserGroupView, Guid>> { group });
-        }
+        CustomGrouping(new Slicer());
     }
 
-    public UserGroupProjection()
-    {
-        CustomGrouping(new CustomSlicer());
-    }
+    public static UserGroupOverview Create(UsersAssignedToGroup e) => new(e.GroupId, e.UserIds.Select(id => new UserGroupOverview.UserDto(id, "")).ToList());
 
-    public static UserGroupView Create(MultipleUsersAssignedToGroupEvent e) => new(e.GroupId, e.UserIds);
-
-    public static UserGroupView Apply(UserGroupView view, MultipleUsersAssignedToGroupEvent e)
+    public static UserGroupOverview Apply(UserGroupOverview view, UserRegisteredEvent e) => view with
     {
-        var merged = view.UserIds.Union(e.UserIds).Distinct().ToList();
-        return view with { UserIds = merged };
+        Users = view.Users.Select(user => user.UserId == e.UserId ? user with { Email = e.Email } : user).ToList()
+    };
+
+
+    public class Slicer : IEventSlicer<UserGroupOverview, Guid>
+    {
+        public ValueTask<IReadOnlyList<EventSlice<UserGroupOverview, Guid>>> SliceInlineActions(
+            IQuerySession querySession,
+            IEnumerable<StreamAction> streams)
+        {
+            var allEvents = streams.SelectMany(s => s.Events).ToList();
+            var tenant = Tenant.ForDatabase(querySession.Database);
+            var slices = new List<EventSlice<UserGroupOverview, Guid>>();
+
+            // 1. Slice alle UsersAssignedToGroup-events til deres respektive gruppe-id
+            var groupAssignEvents = allEvents
+                .OfType<IEvent<UsersAssignedToGroup>>()
+                .ToList();
+
+            foreach (var assignEvent in groupAssignEvents)
+            {
+                slices.Add(new EventSlice<UserGroupOverview, Guid>(
+                    assignEvent.Data.GroupId,
+                    tenant,
+                    new List<IEvent> { assignEvent }
+                ));
+            }
+
+            // 2. Byg et lookup: UserId → List<GroupId>, baseret på UsersAssignedToGroup-events
+            var userIdToGroupIds = groupAssignEvents
+                .SelectMany(e => e.Data.UserIds.Select(userId => (userId, e.Data.GroupId)))
+                .ToLookup(x => x.userId, x => x.GroupId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Distinct().ToList()
+                );
+
+            // 3. Find alle UserRegisteredEvent-events
+            var userRegisteredEvents = allEvents
+                .OfType<IEvent<UserRegisteredEvent>>()
+                .ToList();
+
+            // 4. For hvert UserRegisteredEvent, find de grupper brugeren er i, og tilføj eventet til hver gruppe
+            foreach (var userEvent in userRegisteredEvents)
+            {
+                var userId = userEvent.Data.UserId;
+
+                if (!userIdToGroupIds.TryGetValue(userId, out var groupIds))
+                    continue;
+
+                foreach (var groupId in groupIds)
+                {
+                    var existing = slices.FirstOrDefault(s => s.Id == groupId);
+
+                    if (existing is not null)
+                    {
+                        existing.AddEvent(userEvent);
+                    }
+                    else
+                    {
+                        slices.Add(new EventSlice<UserGroupOverview, Guid>(
+                            groupId,
+                            tenant,
+                            new List<IEvent> { userEvent }
+                        ));
+                    }
+                }
+            }
+
+            return new ValueTask<IReadOnlyList<EventSlice<UserGroupOverview, Guid>>>(slices);
+        }
+
+
+        public ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupOverview, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
+        {
+            var tenant = Tenant.ForDatabase(querySession.Database);
+            var slices = new TenantSliceGroup<UserGroupOverview, Guid>(tenant);
+
+            // 1. Slice alle UsersAssignedToGroup-events til deres respektive gruppe-id
+            slices.AddEvents<UsersAssignedToGroup>(e => e.GroupId, events);
+
+            // 2. Byg et lookup: UserId → List<GroupId>, baseret på UsersAssignedToGroup-events
+            var userIdToGroupIds = events
+                .OfType<IEvent<UsersAssignedToGroup>>()
+                .SelectMany(e => e.Data.UserIds.Select(userId => (userId, e.Data.GroupId)))
+                .ToLookup(x => x.userId, x => x.GroupId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Distinct().ToList()
+                );
+
+            // 3. Find alle UserRegisteredEvent-events
+            var userRegisteredEvents = events
+                .OfType<IEvent<UserRegisteredEvent>>()
+                .ToList();
+
+            // 4. For hvert UserRegisteredEvent, find de grupper brugeren er i, og tilføj eventet til hver gruppe
+            foreach (var userEvent in userRegisteredEvents)
+            {
+                var userId = userEvent.Data.UserId;
+
+                if (!userIdToGroupIds.TryGetValue(userId, out var groupIds)) continue; // Brugeren er ikke blevet tildelt nogen grupper i denne batch
+
+                foreach (var groupId in groupIds)
+                {
+                    slices.AddEvent(groupId, userEvent);
+                }
+            }
+
+            return new ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupOverview, Guid>>>(
+                new List<TenantSliceGroup<UserGroupOverview, Guid>> { slices }
+            );
+        }
     }
 }

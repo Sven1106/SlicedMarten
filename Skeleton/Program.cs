@@ -15,7 +15,7 @@ builder.Services.AddMarten(opts =>
         opts.Projections.Add<InventoryItemDetailsProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<InventoryItemSummaryProjection>(ProjectionLifecycle.Inline);
         // opts.Projections.Add<OrderOverviewProjection>(ProjectionLifecycle.Async);
-        opts.Projections.Add<UserGroupsAssignmentProjection>(ProjectionLifecycle.Async);
+        opts.Projections.Add<UserGroupOverviewProjection>(ProjectionLifecycle.Async);
 
         opts.AutoCreateSchemaObjects = AutoCreate.All;
         opts.Projections.UseIdentityMapForAggregates = true;
