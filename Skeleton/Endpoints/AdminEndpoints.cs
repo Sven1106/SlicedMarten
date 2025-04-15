@@ -10,8 +10,7 @@ public abstract class AdminEndpoints : IEndpoint
         endpoints.MapPost("/admin/rebuild-projections", async (List<ProjectionViewModelEnum> projectionViewModels, CancellationToken cancellationToken, IDocumentStore store) =>
             {
                 var daemon = await store.BuildProjectionDaemonAsync();
-
-                foreach (var name in projectionViewModels.Select(projectionViewModel => Enum.GetName(typeof(ProjectionViewModelEnum), projectionViewModel)).OfType<string>())
+                foreach (var name in projectionViewModels.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
                 {
                     await daemon.RebuildProjectionAsync(name, cancellationToken);
                 }
@@ -22,7 +21,7 @@ public abstract class AdminEndpoints : IEndpoint
                 });
             })
             .WithName("RebuildProjections")
-            .WithDescription("Rebuilds all inline projections from the event store.")
+            .WithDescription("Rebuilds all projections from the event store.")
             .Produces(StatusCodes.Status200OK);
 
         endpoints.MapPost("/admin/rebuild-stream/{streamId:guid}", async (List<ProjectionViewModelEnum> projections, Guid streamId, IDocumentStore store) =>

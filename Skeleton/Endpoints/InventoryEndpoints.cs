@@ -137,3 +137,4 @@ public class InventoryItemSummaryProjection : SingleStreamProjection<InventoryIt
     public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryCounted e) => view with { Quantity = e.ActualQuantity };
     public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryReserved e) => view with { Quantity = view.Quantity - e.QuantityReserved };
 }
+

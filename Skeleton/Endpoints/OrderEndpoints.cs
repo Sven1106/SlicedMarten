@@ -77,21 +77,142 @@ public record Order(Guid Id, List<OrderItem> Items, bool IsConfirmed)
 
 // 🔭 MultiStreamProjection viewmodel
 
-public record OrderOverview(Guid Id, DateTime PlacedAt, List<OrderOverview.OrderItemStatus> Items)
+public record OrderOverview(Guid Id, DateTime PlacedAt, List<OrderOverview.ItemInfo> Items)
 {
-    public record OrderItemStatus(Guid ItemId, string Name, uint Quantity, uint InventoryLeft);
+    public record ItemInfo(Guid ItemId, string Name, uint Quantity);
 }
 
-public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid>
+ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid>
+ {
+     public OrderOverviewProjection()
+     {
+         CustomGrouping(new OrderSlicer());
+     }
+
+     public static OrderOverview Create(OrderPlaced e)
+     {
+         var items = e.Items
+             .Select(i => new OrderOverview.ItemInfo(i.ItemId, "", i.Quantity))
+             .ToList();
+
+         return new OrderOverview(e.OrderId, e.PlacedAt, items);
+     }
+
+     public static OrderOverview Apply(OrderOverview view, ItemAddedToInventory e)
+     {
+         var updatedItems = view.Items
+             .Select(i => i.ItemId == e.ItemId ? i with { Name = e.Name } : i)
+             .ToList();
+
+         return view with { Items = updatedItems };
+     }
+
+     public class OrderSlicer : IEventSlicer<OrderOverview, Guid>
+     {
+         public ValueTask<IReadOnlyList<EventSlice<OrderOverview, Guid>>> SliceInlineActions(IQuerySession session, IEnumerable<StreamAction> streams) =>
+             throw new NotImplementedException();
+
+         public async ValueTask<IReadOnlyList<TenantSliceGroup<OrderOverview, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
+         {
+             var tenant = Tenant.ForDatabase(querySession.Database);
+             var slices = new TenantSliceGroup<OrderOverview, Guid>(tenant);
+
+             // 1. Slice OrderPlaced direkte
+             slices.AddEvents<OrderPlaced>(e => e.OrderId, events);
+
+             // 2. Håndtér ItemAddedToInventory med lookup i dokumentlager
+             var itemEvents = events.OfType<IEvent<ItemAddedToInventory>>().ToList();
+
+             foreach (var itemEvent in itemEvents)
+             {
+                 var doc = await querySession.LoadAsync<ItemToOrders>(itemEvent.Data.ItemId);
+
+                 if (doc is null) continue;
+
+                 foreach (var orderId in doc.Orders)
+                 {
+                     slices.AddEvent(orderId, itemEvent);
+                 }
+             }
+
+             return new List<TenantSliceGroup<OrderOverview, Guid>> { slices };
+         }
+     }
+ }
+
+public record ItemToOrders(Guid Id, int OrderCount, int Invocations, List<Guid> Orders);
+
+public class ItemToOrdersProjection : IProjection
 {
-    public OrderOverviewProjection()
+    public void Apply(IDocumentOperations operations, IReadOnlyList<StreamAction> streams)
     {
+        throw new NotImplementedException();
     }
 
-    public static OrderOverview Create(OrderPlaced e) => new(e.OrderId, e.PlacedAt, []);
-
-    public static OrderOverview Apply(OrderOverview current, ItemAddedToInventory e)
+    public async Task ApplyAsync(IDocumentOperations operations, IReadOnlyList<StreamAction> streams, CancellationToken cancellation)
     {
-        return current;
+        var events = streams
+            .SelectMany(x => x.Events)
+            .OrderBy(s => s.Sequence)
+            .Select(s => s.Data)
+            .ToList();
+
+        var idToDocument = new Dictionary<Guid, ItemToOrders>();
+
+        foreach (var @event in events)
+        {
+            switch (@event)
+            {
+                case OrderPlaced orderPlaced:
+                {
+                    // 1. Find alle ItemIds i denne OrderPlaced, som vi ikke allerede har i memory
+                    var itemIdsToLoad = orderPlaced.Items
+                        .Select(x => x.ItemId)
+                        .Where(id => !idToDocument.ContainsKey(id))
+                        .Distinct()
+                        .ToList();
+
+                    // 2. Batch-load dem
+                    if (itemIdsToLoad.Count > 0)
+                    {
+                        var loadedDocuments = await operations.LoadManyAsync<ItemToOrders>(cancellation, itemIdsToLoad);
+                        foreach (var doc in loadedDocuments)
+                        {
+                            idToDocument.TryAdd(doc.Id, doc);
+                        }
+                    }
+
+                    // 3. Opdatér memory state
+                    foreach (var item in orderPlaced.Items)
+                    {
+                        if (!idToDocument.TryGetValue(item.ItemId, out var itemToOrders))
+                        {
+                            itemToOrders = new ItemToOrders(item.ItemId, 0, 0, []);
+                        }
+
+                        if (!itemToOrders.Orders.Contains(orderPlaced.OrderId))
+                        {
+                            var newOrders = new List<Guid>(itemToOrders.Orders) { orderPlaced.OrderId };
+
+                            itemToOrders = itemToOrders with
+                            {
+                                Orders = newOrders,
+                                OrderCount = newOrders.Count,
+                                Invocations = itemToOrders.Invocations + 1
+                            };
+
+                            idToDocument[item.ItemId] = itemToOrders;
+                        }
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        foreach (var item in idToDocument.Values)
+        {
+            operations.Store(item);
+        }
     }
 }

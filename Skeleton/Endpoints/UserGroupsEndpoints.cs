@@ -73,72 +73,10 @@ public class UserGroupOverviewProjection : MultiStreamProjection<UserGroupOvervi
 
     public class Slicer : IEventSlicer<UserGroupOverview, Guid>
     {
-        public ValueTask<IReadOnlyList<EventSlice<UserGroupOverview, Guid>>> SliceInlineActions(
-            IQuerySession querySession,
-            IEnumerable<StreamAction> streams)
+        public ValueTask<IReadOnlyList<EventSlice<UserGroupOverview, Guid>>> SliceInlineActions(IQuerySession querySession, IEnumerable<StreamAction> streams)
         {
-            var allEvents = streams.SelectMany(s => s.Events).ToList();
-            var tenant = Tenant.ForDatabase(querySession.Database);
-            var slices = new List<EventSlice<UserGroupOverview, Guid>>();
-
-            // 1. Slice alle UsersAssignedToGroup-events til deres respektive gruppe-id
-            var groupAssignEvents = allEvents
-                .OfType<IEvent<UsersAssignedToGroup>>()
-                .ToList();
-
-            foreach (var assignEvent in groupAssignEvents)
-            {
-                slices.Add(new EventSlice<UserGroupOverview, Guid>(
-                    assignEvent.Data.GroupId,
-                    tenant,
-                    new List<IEvent> { assignEvent }
-                ));
-            }
-
-            // 2. Byg et lookup: UserId → List<GroupId>, baseret på UsersAssignedToGroup-events
-            var userIdToGroupIds = groupAssignEvents
-                .SelectMany(e => e.Data.UserIds.Select(userId => (userId, e.Data.GroupId)))
-                .ToLookup(x => x.userId, x => x.GroupId)
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.Distinct().ToList()
-                );
-
-            // 3. Find alle UserRegisteredEvent-events
-            var userRegisteredEvents = allEvents
-                .OfType<IEvent<UserRegisteredEvent>>()
-                .ToList();
-
-            // 4. For hvert UserRegisteredEvent, find de grupper brugeren er i, og tilføj eventet til hver gruppe
-            foreach (var userEvent in userRegisteredEvents)
-            {
-                var userId = userEvent.Data.UserId;
-
-                if (!userIdToGroupIds.TryGetValue(userId, out var groupIds))
-                    continue;
-
-                foreach (var groupId in groupIds)
-                {
-                    var existing = slices.FirstOrDefault(s => s.Id == groupId);
-
-                    if (existing is not null)
-                    {
-                        existing.AddEvent(userEvent);
-                    }
-                    else
-                    {
-                        slices.Add(new EventSlice<UserGroupOverview, Guid>(
-                            groupId,
-                            tenant,
-                            new List<IEvent> { userEvent }
-                        ));
-                    }
-                }
-            }
-
-            return new ValueTask<IReadOnlyList<EventSlice<UserGroupOverview, Guid>>>(slices);
+            throw new NotImplementedException();
         }
-
 
         public ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupOverview, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
         {
