@@ -131,25 +131,26 @@ public record InventoryReserved(Guid ItemId, uint QuantityReserved);
 // Aggregates
 public record InventoryItem(Guid Id, string Name, uint Quantity)
 {
-    public static InventoryItem Create(ItemAddedToInventory e)
-    {
-        return new InventoryItem(e.ItemId, e.Name, e.Quantity);
-    }
+    public static InventoryItem Create(ItemAddedToInventory e) => new(
+        e.ItemId,
+        e.Name,
+        e.Quantity
+    );
 
-    public static InventoryItem Apply(InventoryItem aggregate, InventoryCounted e)
+    public static InventoryItem Apply(InventoryItem aggregate, InventoryCounted e) => aggregate with
     {
-        return aggregate with { Quantity = e.ActualQuantity };
-    }
+        Quantity = e.ActualQuantity
+    };
 
-    public static InventoryItem Apply(InventoryItem aggregate, ItemChangedName e)
+    public static InventoryItem Apply(InventoryItem aggregate, ItemChangedName e) => aggregate with
     {
-        return aggregate with { Name = e.NewName };
-    }
+        Name = e.NewName
+    };
 
-    public static InventoryItem Apply(InventoryItem aggregate, InventoryReserved e)
+    public static InventoryItem Apply(InventoryItem aggregate, InventoryReserved e) => aggregate with
     {
-        return aggregate with { Quantity = aggregate.Quantity - e.QuantityReserved };
-    }
+        Quantity = aggregate.Quantity - e.QuantityReserved
+    };
 }
 
 // Projections
@@ -157,48 +158,51 @@ public record InventoryItemDetails(Guid Id, string Name, string Description, uin
 
 public class InventoryItemDetailsProjection : SingleStreamProjection<InventoryItemDetails>
 {
-    public static InventoryItemDetails Create(ItemAddedToInventory e)
-    {
-        return new InventoryItemDetails(e.ItemId, e.Name, e.Description, e.Quantity);
-    }
+    public static InventoryItemDetails Create(ItemAddedToInventory e) => new(
+        e.ItemId,
+        e.Name,
+        e.Description,
+        e.Quantity
+    );
 
-    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryCounted e)
+    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryCounted e) => view with
     {
-        return view with { Quantity = e.ActualQuantity };
-    }
+        Quantity = e.ActualQuantity
+    };
 
-    public static InventoryItemDetails Apply(InventoryItemDetails view, ItemChangedName e)
+    public static InventoryItemDetails Apply(InventoryItemDetails view, ItemChangedName e) => view with
     {
-        return view with { Name = e.NewName };
-    }
+        Name = e.NewName
+    };
 
-    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryReserved e)
+    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryReserved e) => view with
     {
-        return view with { Quantity = view.Quantity - e.QuantityReserved };
-    }
+        Quantity = view.Quantity - e.QuantityReserved
+    };
 }
 
 public record InventoryItemSummary(Guid Id, string Name, uint Quantity);
 
 public class InventoryItemSummaryProjection : SingleStreamProjection<InventoryItemSummary>
 {
-    public static InventoryItemSummary Create(ItemAddedToInventory e)
-    {
-        return new InventoryItemSummary(e.ItemId, e.Name, e.Quantity);
-    }
+    public static InventoryItemSummary Create(ItemAddedToInventory e) => new(
+        e.ItemId,
+        e.Name,
+        e.Quantity
+    );
 
-    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryCounted e)
+    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryCounted e) => view with
     {
-        return view with { Quantity = e.ActualQuantity };
-    }
+        Quantity = e.ActualQuantity
+    };
 
-    public static InventoryItemSummary Apply(InventoryItemSummary view, ItemChangedName e)
+    public static InventoryItemSummary Apply(InventoryItemSummary view, ItemChangedName e) => view with
     {
-        return view with { Name = e.NewName };
-    }
+        Name = e.NewName
+    };
 
-    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryReserved e)
+    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryReserved e) => view with
     {
-        return view with { Quantity = view.Quantity - e.QuantityReserved };
-    }
+        Quantity = view.Quantity - e.QuantityReserved
+    };
 }

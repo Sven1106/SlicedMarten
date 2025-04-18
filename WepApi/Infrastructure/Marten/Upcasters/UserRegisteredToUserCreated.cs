@@ -7,12 +7,9 @@ public record UserCreated(Guid Id, string Name, string Email);
 
 public class UserCreatedToUserRegistered : EventUpcaster<UserCreated, UserRegistered>
 {
-    protected override UserRegistered Upcast(UserCreated oldEvent)
-    {
-        return new UserRegistered(oldEvent.Id,
-            oldEvent.Name,
-            "UNKNOWN",
-            oldEvent.Email
-        );
-    }
+    protected override UserRegistered Upcast(UserCreated oldEvent) => new(oldEvent.Id,
+        oldEvent.Name,
+        "UNKNOWN",
+        oldEvent.Email
+    );
 }

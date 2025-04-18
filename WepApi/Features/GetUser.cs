@@ -8,29 +8,20 @@ public record GetUserResponse;
 
 public class GetUserHandler
 {
-    public GetUserResponse Handle(GetUserRequest request)
-    {
-        return new GetUserResponse();
-    }
+    public GetUserResponse Handle(GetUserRequest request) => new();
 }
 
 public class GetUserProjection : SingleStreamProjection<GetUserProjection.User>
 {
-    public User Create(UserRegistered @event)
+    public User Create(UserRegistered @event) => new()
     {
-        return new User
-        {
-            Id = @event.UserId,
-            FirstName = @event.FirstName,
-            LastName = @event.LastName,
-            Email = @event.Email
-        };
-    }
+        Id = @event.UserId,
+        FirstName = @event.FirstName,
+        LastName = @event.LastName,
+        Email = @event.Email
+    };
 
-    public void Apply(UserRenamed userRenamed, User state)
-    {
-        state.LastName = userRenamed.NewName;
-    }
+    public void Apply(UserRenamed userRenamed, User state) => state.LastName = userRenamed.NewName;
 
     public class User
     {

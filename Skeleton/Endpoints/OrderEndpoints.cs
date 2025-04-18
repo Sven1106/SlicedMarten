@@ -74,15 +74,9 @@ public record OrderConfirmed(Guid OrderId);
 // 🧱 Aggregate
 public record Order(Guid Id, List<OrderItem> Items, bool IsConfirmed)
 {
-    public static Order Create(OrderPlaced e)
-    {
-        return new Order(e.OrderId, e.Items, false);
-    }
+    public static Order Create(OrderPlaced e) => new(e.OrderId, e.Items, false);
 
-    public static Order Apply(Order current, OrderConfirmed e)
-    {
-        return current with { IsConfirmed = true };
-    }
+    public static Order Apply(Order current, OrderConfirmed e) => current with { IsConfirmed = true };
 }
 
 // 🔭 MultiStreamProjection viewmodel
@@ -94,10 +88,7 @@ public record OrderOverview(Guid Id, DateTime PlacedAt, List<OrderOverview.ItemI
 
 public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid>
 {
-    public OrderOverviewProjection()
-    {
-        CustomGrouping(new OrderSlicer());
-    }
+    public OrderOverviewProjection() => CustomGrouping(new OrderSlicer());
 
     public static OrderOverview Create(OrderPlaced e)
     {
@@ -128,10 +119,8 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
 
     public class OrderSlicer : IEventSlicer<OrderOverview, Guid>
     {
-        public ValueTask<IReadOnlyList<EventSlice<OrderOverview, Guid>>> SliceInlineActions(IQuerySession session, IEnumerable<StreamAction> streams)
-        {
+        public ValueTask<IReadOnlyList<EventSlice<OrderOverview, Guid>>> SliceInlineActions(IQuerySession session, IEnumerable<StreamAction> streams) =>
             throw new NotImplementedException();
-        }
 
         public async ValueTask<IReadOnlyList<TenantSliceGroup<OrderOverview, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
         {
@@ -186,18 +175,12 @@ public record ItemToOrders(Guid Id, List<Guid> OrderIds);
 
 public class ItemToOrdersProjection : MultiStreamProjection<ItemToOrders, Guid>
 {
-    public ItemToOrdersProjection()
-    {
-        Identities<OrderPlaced>(e => e.Items.Select(i => i.ItemId).ToList());
-    }
+    public ItemToOrdersProjection() => Identities<OrderPlaced>(e => e.Items.Select(i => i.ItemId).ToList());
 
-    public static ItemToOrders Create(IEvent<OrderPlaced> e)
-    {
-        return new ItemToOrders(
-            Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
-            [e.Data.OrderId]
-        );
-    }
+    public static ItemToOrders Create(IEvent<OrderPlaced> e) => new(
+        Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
+        [e.Data.OrderId]
+    );
 
 
     public static ItemToOrders Apply(ItemToOrders view, IEvent<OrderPlaced> e)

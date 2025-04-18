@@ -1,7 +1,7 @@
 ﻿using Marten.Events;
 using Marten.Events.Aggregation;
 
-namespace Skeleton.Endpoints;
+namespace Skeleton;
 
 public static class TenantSliceGroupExtensions
 {
