@@ -1,5 +1,4 @@
 using Marten;
-using SourceGenerator;
 
 namespace Skeleton.Endpoints;
 
@@ -11,9 +10,7 @@ public abstract class AdminEndpoints : IEndpoint
             {
                 var daemon = await store.BuildProjectionDaemonAsync();
                 foreach (var name in projectionViewModels.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
-                {
                     await daemon.RebuildProjectionAsync(name, cancellationToken);
-                }
 
                 return Results.Ok(new
                 {

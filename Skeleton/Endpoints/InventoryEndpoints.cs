@@ -8,6 +8,8 @@ public record AddInventoryItemRequest(string Name, string Description, uint Quan
 
 public record CountInventoryItemRequest(uint ActualQuantity, string? Reason);
 
+public record ChangeItemNameRequest(string NewName);
+
 public record ReserveInventoryItemRequest(uint Quantity);
 
 public abstract class InventoryEndpoints : IEndpoint
@@ -28,10 +30,27 @@ public abstract class InventoryEndpoints : IEndpoint
                 return Results.Created($"/inventory/{itemId}", new { itemId });
             })
             .WithName("AddInventoryItem")
-            .WithTags("Inventory")
             .WithDescription("Adds a new inventory item with the given name, description, and quantity.")
             .Produces(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest);
+
+        endpoints.MapPost("/inventory/{itemId:guid}/change-name", async (Guid itemId, ChangeItemNameRequest request, IDocumentSession session) =>
+            {
+                var stream = await session.Events.FetchForWriting<InventoryItem>(itemId);
+                if (stream.Aggregate is null)
+                    return Results.NotFound();
+
+                var @event = new ItemChangedName(itemId, request.NewName);
+                session.Events.Append(itemId, @event);
+                await session.SaveChangesAsync();
+
+                return Results.Accepted();
+            })
+            .WithName("ChangeItemName")
+            .WithDescription("Change the name of the inventory item with the given name")
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound);
 
         endpoints.MapPost("/inventory/{itemId:guid}/count", async (Guid itemId, CountInventoryItemRequest request, IDocumentSession session) =>
             {
@@ -46,7 +65,6 @@ public abstract class InventoryEndpoints : IEndpoint
                 return Results.Accepted();
             })
             .WithName("CountInventoryItem")
-            .WithTags("Inventory")
             .WithDescription("Sets the actual inventory quantity for an item, optionally with a reason (e.g. damaged goods, audit result).")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest)
@@ -73,7 +91,6 @@ public abstract class InventoryEndpoints : IEndpoint
                 return Results.Accepted();
             })
             .WithName("ReserveInventory")
-            .WithTags("Inventory")
             .WithDescription("Reserves quantity of inventory if available.")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest)
@@ -85,7 +102,6 @@ public abstract class InventoryEndpoints : IEndpoint
                 return Results.Ok(items);
             })
             .WithName("ListInventoryItems")
-            .WithTags("Inventory")
             .WithDescription("Returns a list of all inventory items for overview.")
             .Produces<List<InventoryItemSummary>>();
 
@@ -97,7 +113,6 @@ public abstract class InventoryEndpoints : IEndpoint
                 return doc is null ? Results.NotFound() : Results.Ok(doc);
             })
             .WithName("GetInventoryItem")
-            .WithTags("Inventory")
             .WithDescription("Gets the current projected details of an inventory item.")
             .Produces<InventoryItemDetails>()
             .Produces(StatusCodes.Status404NotFound);
@@ -107,6 +122,8 @@ public abstract class InventoryEndpoints : IEndpoint
 // 📦 Event
 public record ItemAddedToInventory(Guid ItemId, string Name, string Description, uint Quantity);
 
+public record ItemChangedName(Guid ItemId, string NewName);
+
 public record InventoryCounted(Guid ItemId, uint ActualQuantity, string? Reason);
 
 public record InventoryReserved(Guid ItemId, uint QuantityReserved);
@@ -114,9 +131,25 @@ public record InventoryReserved(Guid ItemId, uint QuantityReserved);
 // Aggregates
 public record InventoryItem(Guid Id, string Name, uint Quantity)
 {
-    public static InventoryItem Create(ItemAddedToInventory e) => new(e.ItemId, e.Name, e.Quantity);
-    public static InventoryItem Apply(InventoryItem aggregate, InventoryCounted e) => aggregate with { Quantity = e.ActualQuantity };
-    public static InventoryItem Apply(InventoryItem aggregate, InventoryReserved e) => aggregate with { Quantity = aggregate.Quantity - e.QuantityReserved };
+    public static InventoryItem Create(ItemAddedToInventory e)
+    {
+        return new InventoryItem(e.ItemId, e.Name, e.Quantity);
+    }
+
+    public static InventoryItem Apply(InventoryItem aggregate, InventoryCounted e)
+    {
+        return aggregate with { Quantity = e.ActualQuantity };
+    }
+
+    public static InventoryItem Apply(InventoryItem aggregate, ItemChangedName e)
+    {
+        return aggregate with { Name = e.NewName };
+    }
+
+    public static InventoryItem Apply(InventoryItem aggregate, InventoryReserved e)
+    {
+        return aggregate with { Quantity = aggregate.Quantity - e.QuantityReserved };
+    }
 }
 
 // Projections
@@ -124,17 +157,48 @@ public record InventoryItemDetails(Guid Id, string Name, string Description, uin
 
 public class InventoryItemDetailsProjection : SingleStreamProjection<InventoryItemDetails>
 {
-    public static InventoryItemDetails Create(ItemAddedToInventory e) => new(e.ItemId, e.Name, e.Description, e.Quantity);
-    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryCounted e) => view with { Quantity = e.ActualQuantity };
-    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryReserved e) => view with { Quantity = view.Quantity - e.QuantityReserved };
+    public static InventoryItemDetails Create(ItemAddedToInventory e)
+    {
+        return new InventoryItemDetails(e.ItemId, e.Name, e.Description, e.Quantity);
+    }
+
+    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryCounted e)
+    {
+        return view with { Quantity = e.ActualQuantity };
+    }
+
+    public static InventoryItemDetails Apply(InventoryItemDetails view, ItemChangedName e)
+    {
+        return view with { Name = e.NewName };
+    }
+
+    public static InventoryItemDetails Apply(InventoryItemDetails view, InventoryReserved e)
+    {
+        return view with { Quantity = view.Quantity - e.QuantityReserved };
+    }
 }
 
 public record InventoryItemSummary(Guid Id, string Name, uint Quantity);
 
 public class InventoryItemSummaryProjection : SingleStreamProjection<InventoryItemSummary>
 {
-    public static InventoryItemSummary Create(ItemAddedToInventory e) => new(e.ItemId, e.Name, e.Quantity);
-    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryCounted e) => view with { Quantity = e.ActualQuantity };
-    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryReserved e) => view with { Quantity = view.Quantity - e.QuantityReserved };
-}
+    public static InventoryItemSummary Create(ItemAddedToInventory e)
+    {
+        return new InventoryItemSummary(e.ItemId, e.Name, e.Quantity);
+    }
 
+    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryCounted e)
+    {
+        return view with { Quantity = e.ActualQuantity };
+    }
+
+    public static InventoryItemSummary Apply(InventoryItemSummary view, ItemChangedName e)
+    {
+        return view with { Name = e.NewName };
+    }
+
+    public static InventoryItemSummary Apply(InventoryItemSummary view, InventoryReserved e)
+    {
+        return view with { Quantity = view.Quantity - e.QuantityReserved };
+    }
+}

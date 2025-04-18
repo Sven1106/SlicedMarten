@@ -63,12 +63,18 @@ public class UserGroupOverviewProjection : MultiStreamProjection<UserGroupOvervi
         CustomGrouping(new Slicer());
     }
 
-    public static UserGroupOverview Create(UsersAssignedToGroup e) => new(e.GroupId, e.UserIds.Select(id => new UserGroupOverview.UserDto(id, "")).ToList());
-
-    public static UserGroupOverview Apply(UserGroupOverview view, UserRegisteredEvent e) => view with
+    public static UserGroupOverview Create(UsersAssignedToGroup e)
     {
-        Users = view.Users.Select(user => user.UserId == e.UserId ? user with { Email = e.Email } : user).ToList()
-    };
+        return new UserGroupOverview(e.GroupId, e.UserIds.Select(id => new UserGroupOverview.UserDto(id, "")).ToList());
+    }
+
+    public static UserGroupOverview Apply(UserGroupOverview view, UserRegisteredEvent e)
+    {
+        return view with
+        {
+            Users = view.Users.Select(user => user.UserId == e.UserId ? user with { Email = e.Email } : user).ToList()
+        };
+    }
 
 
     public class Slicer : IEventSlicer<UserGroupOverview, Guid>
@@ -108,10 +114,7 @@ public class UserGroupOverviewProjection : MultiStreamProjection<UserGroupOvervi
 
                 if (!userIdToGroupIds.TryGetValue(userId, out var groupIds)) continue; // Brugeren er ikke blevet tildelt nogen grupper i denne batch
 
-                foreach (var groupId in groupIds)
-                {
-                    slices.AddEvent(groupId, userEvent);
-                }
+                foreach (var groupId in groupIds) slices.AddEvent(groupId, userEvent);
             }
 
             return new ValueTask<IReadOnlyList<TenantSliceGroup<UserGroupOverview, Guid>>>(
