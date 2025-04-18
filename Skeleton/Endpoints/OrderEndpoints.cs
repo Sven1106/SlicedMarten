@@ -48,7 +48,7 @@ public abstract class OrderEndpoints : IEndpoint
             .Produces(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest);
 
-        // 📦 Hent et OrderOverview (MultiStreamProjection)
+        // 📦 Get an OrderOverview (MultiStreamProjection)
         endpoints.MapGet("/orders/{orderId:guid}/overview", async (
                 Guid orderId,
                 IQuerySession session) =>
@@ -143,7 +143,6 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                     {
                         sliceGroup.AddEvent(orderPlaced.Data.OrderId, orderPlaced);
 
-                        // Add Inventory Event handling
                         foreach (var orderItem in orderPlaced.Data.Items)
                         {
                             if (streamIdToStreamEvents.TryGetValue(orderItem.ItemId, out var streamEvents) == false)
@@ -152,7 +151,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                                 streamIdToStreamEvents[orderItem.ItemId] = streamEvents;
                             }
 
-                            foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId]) sliceGroup.TryAddEvent(orderPlaced.Data.OrderId, streamEvent);
+                            foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId]) sliceGroup.AddEvent(orderPlaced.Data.OrderId, streamEvent);
                         }
 
                         break;
@@ -161,7 +160,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                     {
                         var lookup = await querySession.LoadAsync<ItemToOrders>(itemChanged.Data.ItemId);
                         if (lookup is null) break;
-                        foreach (var order in lookup.Orders) sliceGroup.TryAddEvent(order, itemChanged);
+                        foreach (var order in lookup.OrderIds) sliceGroup.AddEvent(order, itemChanged);
                         break;
                     }
                 }
@@ -171,7 +170,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
     }
 }
 
-public record ItemToOrders(Guid Id, List<Guid> Orders);
+public record ItemToOrders(Guid Id, List<Guid> OrderIds);
 
 public class ItemToOrdersProjection : MultiStreamProjection<ItemToOrders, Guid>
 {
@@ -182,21 +181,21 @@ public class ItemToOrdersProjection : MultiStreamProjection<ItemToOrders, Guid>
 
     public static ItemToOrders Create(IEvent<OrderPlaced> e)
     {
-        List<Guid> newOrders = [e.Data.OrderId];
         return new ItemToOrders(
-            Guid.Empty, // Marten overskriver det korrekt med slice-id (ItemId), så det er lige meget hvad der står her.
-            newOrders
+            Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
+            [e.Data.OrderId]
         );
     }
 
+
     public static ItemToOrders Apply(ItemToOrders view, IEvent<OrderPlaced> e)
     {
-        if (view.Orders.Contains(e.Data.OrderId)) return view;
-        var newOrders = view.Orders.Append(e.Data.OrderId).ToList();
+        if (view.OrderIds.Contains(e.Data.OrderId)) return view;
+        var newOrderIds = view.OrderIds.Append(e.Data.OrderId).ToList();
 
         return view with
         {
-            Orders = newOrders
+            OrderIds = newOrderIds
         };
     }
 

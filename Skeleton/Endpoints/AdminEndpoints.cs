@@ -6,32 +6,31 @@ public abstract class AdminEndpoints : IEndpoint
 {
     public static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/admin/rebuild-projections", async (List<ProjectionViewModelEnum> projectionViewModels, CancellationToken cancellationToken, IDocumentStore store) =>
+        endpoints.MapPost("/admin/rebuild-projections", async (List<ProjectionEnum> projections, CancellationToken cancellationToken, IDocumentStore store) =>
             {
                 var daemon = await store.BuildProjectionDaemonAsync();
-                foreach (var name in projectionViewModels.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
-                    await daemon.RebuildProjectionAsync(name, cancellationToken);
+                foreach (var projection in projections.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
+                    await daemon.RebuildProjectionAsync(projection, cancellationToken);
 
                 return Results.Ok(new
                 {
-                    projectionViewModelsRebuilt = projectionViewModels
+                    projections
                 });
             })
             .WithName("RebuildProjections")
             .WithDescription("Rebuilds all projections from the event store.")
             .Produces(StatusCodes.Status200OK);
 
-        endpoints.MapPost("/admin/rebuild-stream/{streamId:guid}", async (List<ProjectionViewModelEnum> projections, Guid streamId, IDocumentStore store) =>
+        endpoints.MapPost("/admin/rebuild-stream/{streamId:guid}", async (List<SingleStreamProjectionEnum> projections, Guid streamId, IDocumentStore store) =>
             {
                 try
                 {
-                    await store.Advanced.RebuildSingleStreamAsync<InventoryItemDetails>(streamId);
-                    await store.Advanced.RebuildSingleStreamAsync<InventoryItemSummary>(streamId);
+                    foreach (var projection in projections) await projection.RebuildSingleStreamAsync(store, streamId);
 
                     return Results.Ok(new
                     {
                         streamId,
-                        projectionsRebuilt = new[] { nameof(InventoryItemDetails), nameof(InventoryItemSummary) }
+                        projections
                     });
                 }
                 catch (Exception ex)

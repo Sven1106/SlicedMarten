@@ -1,7 +1,7 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Immutable;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace SourceGenerator;
 
@@ -43,7 +43,7 @@ public class EndpointsGenerator : IIncrementalGenerator
                          }
                          """;
 
-        StringBuilder codeBuilder = new StringBuilder();
+        var codeBuilder = new StringBuilder();
         codeBuilder.AppendLine(prefixCode);
 
         foreach (var syntax in classes)
