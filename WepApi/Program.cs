@@ -50,10 +50,7 @@ app.MapGet("/weatherforecast", () =>
     .WithName("GetWeatherForecast")
     .WithOpenApi();
 
-app.MapGet("/users/{id:guid}", (Guid id) =>
-    {
-        return;
-    })
+app.MapGet("/users/{id:guid}", (Guid id) => { })
     .WithName("GetUser")
     .WithOpenApi();
 
@@ -67,7 +64,7 @@ app.MapPost("/users/", async (RegisterUserRequest request, IDocumentSession sess
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
 }

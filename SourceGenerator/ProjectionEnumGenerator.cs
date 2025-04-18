@@ -24,9 +24,7 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
                     while (baseType is not null)
                     {
                         if (baseType.ConstructedFrom.Name is "SingleStreamProjection" or "MultiStreamProjection" && baseType.TypeArguments[0] is INamedTypeSymbol viewModel)
-                        {
                             return new ViewModelWithProjection(viewModel, projectionTypeSymbol);
-                        }
 
                         baseType = baseType.BaseType;
                     }
@@ -49,7 +47,10 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
                                    public enum ProjectionEnum
                                    {
                                    """);
-            foreach (var symbol in symbols) codeBuilder.AppendLine($"    {symbol.ViewModel.Name},");
+            foreach (var symbol in symbols)
+            {
+                codeBuilder.AppendLine($"    {symbol.ViewModel.Name},");
+            }
 
             codeBuilder.AppendLine("""
                                    }
@@ -57,7 +58,10 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
                                    public enum SingleStreamProjectionEnum
                                    {
                                    """);
-            foreach (var symbol in symbols.Where(p => InheritsFrom(p.Projection, "SingleStreamProjection"))) codeBuilder.AppendLine($"    {symbol.ViewModel.Name},");
+            foreach (var symbol in symbols.Where(p => InheritsFrom(p.Projection, "SingleStreamProjection")))
+            {
+                codeBuilder.AppendLine($"    {symbol.ViewModel.Name},");
+            }
 
             codeBuilder.AppendLine("""
                                    }
@@ -70,7 +74,10 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
                                            {
                                    """);
             foreach (var symbol in symbols.Where(symbol => symbol.ViewModel.AllInterfaces.Any(i => i.Name == "IProjection")))
+            {
                 codeBuilder.AppendLine($"            ProjectionEnum.{symbol.ViewModel.Name} => \"{symbol.ViewModel.ToDisplayString()}\",");
+            }
+
             codeBuilder.AppendLine("""
                                                _ => value.ToString()
                                            };
@@ -83,11 +90,13 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
                                    """);
 
             foreach (var symbol in symbols.Where(p => InheritsFrom(p.Projection, "SingleStreamProjection")))
+            {
                 codeBuilder.AppendLine($"""
                                                     case SingleStreamProjectionEnum.{symbol.ViewModel.Name}: 
                                                         await store.Advanced.RebuildSingleStreamAsync<{symbol.ViewModel.Name}>(streamId);
                                                         break;
                                         """);
+            }
 
             codeBuilder.AppendLine("""
                                            }
@@ -105,8 +114,7 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
         var current = symbol.BaseType;
         while (current != null)
         {
-            if (current.OriginalDefinition.Name == baseName)
-                return true;
+            if (current.OriginalDefinition.Name == baseName) return true;
 
             current = current.BaseType;
         }
@@ -114,15 +122,9 @@ public class ProjectionEnumGenerator : IIncrementalGenerator
         return false;
     }
 
-    private class ViewModelWithProjection
+    private class ViewModelWithProjection(INamedTypeSymbol viewModel, INamedTypeSymbol projection)
     {
-        public INamedTypeSymbol ViewModel { get; }
-        public INamedTypeSymbol Projection { get; }
-
-        public ViewModelWithProjection(INamedTypeSymbol viewModel, INamedTypeSymbol projection)
-        {
-            ViewModel = viewModel;
-            Projection = projection;
-        }
+        public INamedTypeSymbol ViewModel { get; } = viewModel;
+        public INamedTypeSymbol Projection { get; } = projection;
     }
 }

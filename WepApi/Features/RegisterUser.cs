@@ -1,10 +1,13 @@
-﻿using System.Threading.Tasks;
-using Marten;
+﻿using Marten;
 
 namespace WepApi.Features;
+
 public record RegisterUserRequest(string FirstName, string LastName, string Email);
+
 public record RegisterUserResponse(Guid Id);
+
 public record UserRegistered(Guid UserId, string FirstName, string LastName, string Email);
+
 public class RegisterUserHandler(IDocumentSession session)
 {
     public async Task<RegisterUserResponse> Handle(RegisterUserRequest request)

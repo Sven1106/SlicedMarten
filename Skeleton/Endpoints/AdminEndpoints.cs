@@ -10,7 +10,9 @@ public abstract class AdminEndpoints : IEndpoint
             {
                 var daemon = await store.BuildProjectionDaemonAsync();
                 foreach (var projection in projections.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
+                {
                     await daemon.RebuildProjectionAsync(projection, cancellationToken);
+                }
 
                 return Results.Ok(new
                 {
@@ -25,7 +27,10 @@ public abstract class AdminEndpoints : IEndpoint
             {
                 try
                 {
-                    foreach (var projection in projections) await projection.RebuildSingleStreamAsync(store, streamId);
+                    foreach (var projection in projections)
+                    {
+                        await projection.RebuildSingleStreamAsync(store, streamId);
+                    }
 
                     return Results.Ok(new
                     {

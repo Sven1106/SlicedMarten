@@ -51,7 +51,7 @@ public class EndpointsGenerator : IIncrementalGenerator
             var symbol = compilation.GetSemanticModel(syntax.SyntaxTree)
                 .GetDeclaredSymbol(syntax) as INamedTypeSymbol;
 
-            codeBuilder.AppendLine($"         {symbol!.Name}.MapEndpoints(endpoints.MapGroup(\"\").WithTags(\"{symbol!.Name.Replace("Endpoints", "")}\"));");
+            codeBuilder.AppendLine($"         {symbol!.Name}.MapEndpoints(endpoints.MapGroup(\"\").WithTags(\"{symbol.Name.Replace("Endpoints", "")}\"));");
         }
 
         codeBuilder.AppendLine(suffixCode);

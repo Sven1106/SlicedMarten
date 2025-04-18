@@ -38,7 +38,10 @@ public abstract class OrderEndpoints : IEndpoint
                 var orderPlaced = new OrderPlaced(orderId, request.Items, DateTime.UtcNow);
                 session.Events.StartStream<Order>(orderId, orderPlaced);
 
-                foreach (var item in request.Items) session.Events.Append(item.ItemId, new InventoryReserved(item.ItemId, item.Quantity));
+                foreach (var item in request.Items)
+                {
+                    session.Events.Append(item.ItemId, new InventoryReserved(item.ItemId, item.Quantity));
+                }
 
                 await session.SaveChangesAsync();
                 return Results.Created($"/orders/{orderId}", new { orderId });
@@ -137,6 +140,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
             var streamIdToStreamEvents = new Dictionary<Guid, IReadOnlyList<IEvent>>();
 
             foreach (var @event in events)
+            {
                 switch (@event)
                 {
                     case IEvent<OrderPlaced> orderPlaced:
@@ -151,7 +155,10 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                                 streamIdToStreamEvents[orderItem.ItemId] = streamEvents;
                             }
 
-                            foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId]) sliceGroup.AddEvent(orderPlaced.Data.OrderId, streamEvent);
+                            foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId])
+                            {
+                                sliceGroup.AddEvent(orderPlaced.Data.OrderId, streamEvent);
+                            }
                         }
 
                         break;
@@ -160,10 +167,15 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                     {
                         var lookup = await querySession.LoadAsync<ItemToOrders>(itemChanged.Data.ItemId);
                         if (lookup is null) break;
-                        foreach (var order in lookup.OrderIds) sliceGroup.AddEvent(order, itemChanged);
+                        foreach (var order in lookup.OrderIds)
+                        {
+                            sliceGroup.AddEvent(order, itemChanged);
+                        }
+
                         break;
                     }
                 }
+            }
 
             return [sliceGroup];
         }
