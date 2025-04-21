@@ -9,6 +9,10 @@
     }
   },
   "profiles": {
+    "Generators": {
+      "commandName": "DebugRoslynComponent",
+      "targetProject": "../Skeleton/Skeleton.csproj"
+    },
     "http": {
       "commandName": "Project",
       "dotnetRunMessages": true,

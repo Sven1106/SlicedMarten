@@ -9,30 +9,54 @@ projection types.
 - Try out different projection types (inline, async, live)
 - Experiment with projection lifecycles (SingleStream, MultiStream, Daemon, etc.)
 - Test event versioning and upcasting
-- Automate registration of endpoints and projections using source generators
-
-## 📦 Included Examples
-
-- `PurchaseItems` use case (inventory, orders, confirmation emails)
-- `InventoryAggregate` and `OrderAggregate` as event-sourced aggregates
-- Inline projections for lookups (e.g. `ItemOrderLookupProjection`)
-- Async projections for historical views
-- Multi-stream projection example (e.g. Users assigned to Groups)
-- Source generator for auto-mapping all `IEndpoint` implementations
-- Source generator for enum of all `SingleStreamProjection<T>` types
 
 ## ✅ Todo List
 
-- [ ] Add an aggregate that is only
-- [ ] Set up basic `DocumentStore` configuration for Marten
-- [ ] Implement `InventoryAggregate` and related events
-- [ ] Implement `OrderAggregate` and related events
-- [ ] Create the `PurchaseItems` use case
-- [ ] Add inline projection for `ItemOrderLookupProjection`
-- [ ] Add async projection for `OrderHistoryView`
-- [ ] Add live projection for UI integration (e.g. SignalR + React Query)
-- [ ] Create a `MultiStreamProjection` using `UserGroupId` as the key
-- [ ] Create source generator for auto-mapping all `IEndpoint` implementations
-- [ ] Create source generator for enum of all `SingleStreamProjection<T>` types
-- [ ] Add an upcasting example with versioned events
-- [ ] Write integration tests for use cases and projections
+- [x] Append an event to a new stream through a command  
+  → Using `StartStream` with a new `Guid` is clean and expressive. Perfect for initializing a new aggregate with its
+  first event.
+
+- [x] Get the current state from a single stream in a command.  
+  → Reading current state inside commands via `FetchForWriting<T>` helps validate logic before appending new events.
+  Keeps write flow intuitive.
+
+- [x] Add a projection that applies events from a single stream.  
+  → Single stream projections are ideal for rebuilding aggregate state. Using `SingleStreamProjection<T>` keeps
+  projection logic isolated and easy to reason about.
+
+- [x] Return a list of projections using Marten queries  
+  → Use `query.Query<Projection>()` to return a list of projections.
+
+- [x] Return the latest projection for a stream  
+  → Use `session.Events.FetchLatest<Projection>(streamId)` to return the most recent version of a projection for a
+  specific stream.   
+  → Supports **all projection lifecycles**:
+    - **Inline**: uses the in-session state, no extra DB hit
+    - **Live**: replays events using `AggregateStreamAsync`
+    - **Async**: loads stored snapshot and applies remaining events
+
+- [x] Add a projection that applies events from multiple streams.  
+  → Multi stream projections make it possible to combine data from related streams (e.g. `User` and `UserGroup`, or
+  `Order` and `InventoryItem`), but require good key coordination and handling of event slicing.
+
+- [x] Append events to multiple streams in one command.  
+  → Marten buffers all appends within a single `IDocumentSession` and persists them atomically on `SaveChangesAsync()`.
+
+- [x] Use lookup table projections to support complex cross-stream projections  
+  → Projections like `ItemToOrders` help correlate which streams are affected by external changes. Useful for reverse
+  indexing relationships.
+
+- [ ] Add a projection that gets data from other services.
+
+- [ ] Add a projection for UI integration.
+
+- [ ] Add upcasting for versioned events
+
+- [ ] Handle projection deletions or cleanup when related aggregates are removed.
+
+- [ ] Explore error handling and retries in projections.
+
+- [ ] Try out inline vs async projection trade-offs in performance tests.
+
+
+

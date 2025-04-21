@@ -19,10 +19,11 @@ builder.Services.AddMarten(opts =>
 
         opts.AutoCreateSchemaObjects = AutoCreate.All;
         opts.Projections.UseIdentityMapForAggregates = true;
+        opts.Events.UseIdentityMapForAggregates = true;
     })
     .UseLightweightSessions()
     .AddAsyncDaemon(DaemonMode.Solo);
-
+builder.Services.AddHostedService<ProjectionChangeListener>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.ConfigureHttpJsonOptions(options => { options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
