@@ -45,6 +45,24 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
 
     private async Task CreateTriggerIfNotExistsAsync(ProjectionMetadata meta, CancellationToken ct)
     {
+        var tableExistsSql = $"""
+                                  SELECT EXISTS (
+                                      SELECT 1
+                                      FROM information_schema.tables
+                                      WHERE table_name = '{meta.TableName}'
+                                  );
+                              """;
+
+        await using var tableCheckCmd = _conn!.CreateCommand();
+        tableCheckCmd.CommandText = tableExistsSql;
+
+        var tableExists = (bool)(await tableCheckCmd.ExecuteScalarAsync(ct))!;
+        if (!tableExists)
+        {
+            logger.LogWarning("Skipping trigger creation for '{Table}' because the table does not exist yet.", meta.TableName);
+            return;
+        }
+
         var createFunctionSql = $"""
                                      CREATE OR REPLACE FUNCTION {meta.FunctionName}() RETURNS trigger AS $$
                                      BEGIN
@@ -140,13 +158,14 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
         var projectionMetadata = ProjectionMetadata.FromChannel(e.Channel);
         switch (projectionMetadata.ProjectionEnum)
         {
-            case ProjectionEnum.InventoryItemDetails:
-            case ProjectionEnum.InventoryItemSummary:
-            case ProjectionEnum.OrderOverview:
-            case ProjectionEnum.ItemToOrders:
+            case ProjectionEnum.ItemDetails:
+            case ProjectionEnum.ItemSummary:
+            case ProjectionEnum.ItemIdToOrderIds:
                 logger.LogInformation("Projection '{projection}' updated for ID: {id}", projectionMetadata.ProjectionEnum.Value.GetProjectionViewModelName(), e.Payload);
-                
                 // TODO: Send to SignalR/SSE/etc.
+                break;
+            case ProjectionEnum.OrderOverview:
+
                 break;
         }
     }

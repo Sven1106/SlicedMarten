@@ -6,7 +6,7 @@ using Marten.Storage;
 
 namespace Skeleton.Endpoints;
 
-public record PlaceOrderRequest(List<OrderItem> Items);
+public record PlaceOrderRequest(List<OrderItem> OrderItems);
 
 public record OrderItem(Guid ItemId, uint Quantity);
 
@@ -16,42 +16,51 @@ public abstract class OrderEndpoints : IEndpoint
     {
         endpoints.MapPost("/orders", async (PlaceOrderRequest request, IDocumentSession session) =>
             {
-                if (request.Items.Count == 0)
+                if (request.OrderItems.Count == 0)
                     return Results.BadRequest("Order must contain at least one item.");
 
                 var insufficient = new List<Guid>();
 
-                foreach (var item in request.Items)
+                foreach (var orderItem in request.OrderItems)
                 {
-                    var inventory = await session.Events.FetchForWriting<InventoryItem>(item.ItemId);
-                    if (inventory.Aggregate == null)
-                        return Results.BadRequest($"Item with id {item.ItemId} does not exist.");
+                    var item = await session.Events.FetchForWriting<Item>(orderItem.ItemId);
+                    if (item.Aggregate == null)
+                        return Results.BadRequest($"Item with id {orderItem.ItemId} does not exist.");
 
-                    if (inventory.Aggregate.Quantity < item.Quantity)
-                        insufficient.Add(item.ItemId);
+                    if (item.Aggregate.Quantity < orderItem.Quantity)
+                        insufficient.Add(orderItem.ItemId);
                 }
 
                 if (insufficient.Count != 0)
                     return Results.BadRequest($"Not enough stock for: {string.Join(", ", insufficient)}");
 
                 var orderId = Guid.NewGuid();
-                var orderPlaced = new OrderPlaced(orderId, request.Items, DateTime.UtcNow);
+                var orderPlaced = new OrderPlaced(orderId, request.OrderItems, DateTime.UtcNow);
                 session.Events.StartStream<Order>(orderId, orderPlaced);
 
-                foreach (var item in request.Items)
+                foreach (var item in request.OrderItems)
                 {
-                    session.Events.Append(item.ItemId, new InventoryReserved(item.ItemId, item.Quantity));
+                    session.Events.Append(item.ItemId, new ItemReserved(item.ItemId, item.Quantity));
                 }
 
                 await session.SaveChangesAsync();
                 return Results.Created($"/orders/{orderId}", new { orderId });
             })
             .WithName("PlaceOrder")
-            .WithDescription("Places an order if inventory is sufficient.")
+            .WithDescription("Places an order if item is sufficient.")
             .Produces(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status400BadRequest);
 
-        // 📦 Get an OrderOverview (MultiStreamProjection)
+        endpoints.MapGet("/orders/", async (IQuerySession session) =>
+            {
+                var overview = await session.Query<OrderOverview>().ToListAsync(); // TODO: Create  
+                return Results.Ok(overview);
+            })
+            .WithName("GetOrderOverviews")
+            .WithDescription("Get orders with item status using a multi-stream projection.")
+            .Produces<List<OrderOverview>>()
+            .Produces(StatusCodes.Status404NotFound);
+
         endpoints.MapGet("/orders/{orderId:guid}/overview", async (
                 Guid orderId,
                 IQuerySession session) =>
@@ -60,7 +69,7 @@ public abstract class OrderEndpoints : IEndpoint
                 return overview is null ? Results.NotFound() : Results.Ok(overview);
             })
             .WithName("GetOrderOverview")
-            .WithDescription("Gets an order with inventory status using a multi-stream projection.")
+            .WithDescription("Gets an order with item status using a multi-stream projection.")
             .Produces<OrderOverview>()
             .Produces(StatusCodes.Status404NotFound);
     }
@@ -99,7 +108,8 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
         return new OrderOverview(e.OrderId, e.PlacedAt, items, items.Count, 1);
     }
 
-    public static OrderOverview Apply(OrderOverview view, ItemAddedToInventory e)
+
+    public static OrderOverview Apply(OrderOverview view, ItemAdded e)
     {
         var updatedItems = view.Items
             .Select(i => i.ItemId == e.ItemId ? i with { Name = e.Name } : i)
@@ -117,7 +127,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
         return view with { Items = updatedItems };
     }
 
-    public class OrderSlicer : IEventSlicer<OrderOverview, Guid>
+    private class OrderSlicer : IEventSlicer<OrderOverview, Guid>
     {
         public ValueTask<IReadOnlyList<EventSlice<OrderOverview, Guid>>> SliceInlineActions(IQuerySession session, IEnumerable<StreamAction> streams) =>
             throw new NotImplementedException();
@@ -154,11 +164,13 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                     }
                     case IEvent<ItemChangedName> itemChanged:
                     {
-                        var lookup = await querySession.LoadAsync<ItemToOrders>(itemChanged.Data.ItemId);
+                        var lookup = await querySession.LoadAsync<ItemIdToOrderIds>(itemChanged.Data.ItemId);
                         if (lookup is null) break;
-                        foreach (var order in lookup.OrderIds)
+                        foreach (var orderId in lookup.OrderIds)
                         {
-                            sliceGroup.AddEvent(order, itemChanged);
+                            var existing = await querySession.LoadAsync<OrderOverview>(orderId);
+                            if (existing is null) continue;
+                            sliceGroup.AddEvent(orderId, itemChanged);
                         }
 
                         break;
@@ -171,19 +183,19 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
     }
 }
 
-public record ItemToOrders(Guid Id, List<Guid> OrderIds);
+public record ItemIdToOrderIds(Guid Id, List<Guid> OrderIds);
 
-public class ItemToOrdersProjection : MultiStreamProjection<ItemToOrders, Guid>
+public class ItemToOrdersProjection : MultiStreamProjection<ItemIdToOrderIds, Guid>
 {
     public ItemToOrdersProjection() => Identities<OrderPlaced>(e => e.Items.Select(i => i.ItemId).ToList());
 
-    public static ItemToOrders Create(IEvent<OrderPlaced> e) => new(
+    public static ItemIdToOrderIds Create(IEvent<OrderPlaced> e) => new(
         Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
         [e.Data.OrderId]
     );
 
 
-    public static ItemToOrders Apply(ItemToOrders view, IEvent<OrderPlaced> e)
+    public static ItemIdToOrderIds Apply(ItemIdToOrderIds view, IEvent<OrderPlaced> e)
     {
         if (view.OrderIds.Contains(e.Data.OrderId)) return view;
         var newOrderIds = view.OrderIds.Append(e.Data.OrderId).ToList();

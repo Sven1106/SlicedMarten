@@ -12,8 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMarten(opts =>
     {
         opts.Connection(builder.Configuration.GetConnectionString("Marten"));
-        opts.Projections.Add<InventoryItemDetailsProjection>(ProjectionLifecycle.Inline);
-        opts.Projections.Add<InventoryItemSummaryProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.Add<ItemDetailsProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.Add<ItemSummaryProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<ItemToOrdersProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<OrderOverviewProjection>(ProjectionLifecycle.Async);
 
