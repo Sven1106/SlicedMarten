@@ -113,7 +113,7 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
 
                 if (expectedTriggers.Contains(triggerName)) continue;
                 var meta = ProjectionMetadata.FromTriggerName(triggerName);
-                existingTriggers.Add(meta!);
+                existingTriggers.Add(meta);
             }
         }
 
@@ -138,10 +138,17 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
     private void OnNotificationReceived(object? sender, NpgsqlNotificationEventArgs e)
     {
         var projectionMetadata = ProjectionMetadata.FromChannel(e.Channel);
-        var id = e.Payload;
-        logger.LogInformation("Projection '{projectionMetadata}' updated for ID: {Id}", projectionMetadata, id);
-
-        // TODO: Send to SignalR/SSE/etc.
+        switch (projectionMetadata.ProjectionEnum)
+        {
+            case ProjectionEnum.InventoryItemDetails:
+            case ProjectionEnum.InventoryItemSummary:
+            case ProjectionEnum.OrderOverview:
+            case ProjectionEnum.ItemToOrders:
+                logger.LogInformation("Projection '{projection}' updated for ID: {id}", projectionMetadata.ProjectionEnum.Value.GetProjectionViewModelName(), e.Payload);
+                
+                // TODO: Send to SignalR/SSE/etc.
+                break;
+        }
     }
 
     public override void Dispose()
@@ -159,33 +166,38 @@ public record ProjectionMetadata(
     string TriggerName,
     ProjectionEnum? ProjectionEnum)
 {
+    private const string TablePrefix = "mt_doc_";
+    private const string ChannelPrefix = "projection_updated_";
+    private const string FunctionPrefix = "notify_";
+    private const string FunctionSuffix = "_updated";
+    private const string TriggerSuffix = "_trigger";
+
     public static ProjectionMetadata FromEnum(ProjectionEnum projectionEnum)
     {
         var enumName = projectionEnum.ToString().ToLowerInvariant();
-        var tableName = $"mt_doc_{enumName}";
+        var tableName = $"{TablePrefix}{enumName}";
 
         return new ProjectionMetadata(
             tableName,
-            $"projection_updated_{tableName}",
-            $"notify_{tableName}_updated",
-            $"{tableName}_trigger",
+            $"{ChannelPrefix}{tableName}",
+            $"{FunctionPrefix}{tableName}{FunctionSuffix}",
+            $"{tableName}{TriggerSuffix}",
             projectionEnum
         );
     }
 
     public static ProjectionMetadata FromTriggerName(string triggerName)
     {
-        const string suffix = "_trigger";
-        if (triggerName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) is false)
+        if (!triggerName.EndsWith(TriggerSuffix, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException($"Invalid trigger name: '{triggerName}'");
 
-        var tableName = triggerName[..^suffix.Length];
+        var tableName = triggerName[..^TriggerSuffix.Length];
         var resolvedEnum = ResolveEnum(tableName);
 
         return new ProjectionMetadata(
             tableName,
-            $"projection_updated_{tableName}",
-            $"notify_{tableName}_updated",
+            $"{ChannelPrefix}{tableName}",
+            $"{FunctionPrefix}{tableName}{FunctionSuffix}",
             triggerName,
             resolvedEnum
         );
@@ -193,31 +205,17 @@ public record ProjectionMetadata(
 
     public static ProjectionMetadata FromChannel(string channel)
     {
-        const string prefix = "projection_updated_";
-        if (channel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) is false)
+        if (!channel.StartsWith(ChannelPrefix, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException($"Invalid channel name: '{channel}'");
 
-        var tableName = channel[prefix.Length..];
+        var tableName = channel[ChannelPrefix.Length..];
         var resolvedEnum = ResolveEnum(tableName);
 
         return new ProjectionMetadata(
             tableName,
             channel,
-            $"notify_{tableName}_updated",
-            $"{tableName}_trigger",
-            resolvedEnum
-        );
-    }
-
-    public static ProjectionMetadata FromTableName(string tableName)
-    {
-        var resolvedEnum = ResolveEnum(tableName);
-
-        return new ProjectionMetadata(
-            tableName,
-            $"projection_updated_{tableName}",
-            $"notify_{tableName}_updated",
-            $"{tableName}_trigger",
+            $"{FunctionPrefix}{tableName}{FunctionSuffix}",
+            $"{tableName}{TriggerSuffix}",
             resolvedEnum
         );
     }
@@ -226,7 +224,7 @@ public record ProjectionMetadata(
     {
         foreach (var e in Enum.GetValues<ProjectionEnum>())
         {
-            var expected = $"mt_doc_{e.ToString().ToLowerInvariant()}";
+            var expected = $"{TablePrefix}{e.ToString().ToLowerInvariant()}";
             if (string.Equals(expected, tableName, StringComparison.OrdinalIgnoreCase))
                 return e;
         }

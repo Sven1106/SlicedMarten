@@ -8,7 +8,6 @@ projection types.
 - Get hands-on experience with Marten's event sourcing features
 - Try out different projection types (inline, async, live)
 - Experiment with projection lifecycles (SingleStream, MultiStream, Daemon, etc.)
-- Test event versioning and upcasting
 
 ## ✅ Todo List
 
@@ -46,9 +45,11 @@ projection types.
   → Projections like `ItemToOrders` help correlate which streams are affected by external changes. Useful for reverse
   indexing relationships.
 
-- [ ] Add a projection that gets data from other services.
+- [x] Find a way to notify UI, or third party services that a projection was updated.
+  → Marten subscriptions trigger on event append, not when projections are persisted — making it unreliable for notifying UI about the actual read model state.
+  → Chose PostgreSQL `LISTEN/NOTIFY`on projection tables to ensure signals are sent only after projections are fully updated, regardless of projection lifecycle.
 
-- [ ] Add a projection for UI integration.
+- [ ] Add a projection that gets data from other services.
 
 - [ ] Add upcasting for versioned events
 
