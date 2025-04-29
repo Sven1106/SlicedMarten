@@ -1,5 +1,7 @@
 using Marten;
+using Marten.Events;
 using Marten.Events.Aggregation;
+using Marten.Schema.Identity;
 
 namespace Skeleton.Endpoints;
 
@@ -21,10 +23,10 @@ public abstract class ItemEndpoints : IEndpoint
                 if (string.IsNullOrWhiteSpace(request.Name))
                     return Results.BadRequest("Name is required.");
 
-                var itemId = Guid.NewGuid();
+                var itemId = CombGuidIdGeneration.NewGuid();
                 var @event = new ItemAdded(itemId, request.Name, request.Description, request.Quantity);
 
-                session.Events.StartStream<Item>(itemId, @event);
+                session.Events.StartStream<ItemAggregate>(itemId, @event);
                 await session.SaveChangesAsync();
 
                 return Results.Created($"/item/{itemId}", new { itemId });
@@ -36,7 +38,7 @@ public abstract class ItemEndpoints : IEndpoint
 
         endpoints.MapPost("/item/{itemId:guid}/change-name", async (Guid itemId, ChangeItemNameRequest request, IDocumentSession session) =>
             {
-                var stream = await session.Events.FetchForWriting<Item>(itemId);
+                var stream = await session.Events.FetchForWriting<ItemAggregate>(itemId);
                 if (stream.Aggregate is null)
                     return Results.NotFound();
 
@@ -54,7 +56,7 @@ public abstract class ItemEndpoints : IEndpoint
 
         endpoints.MapPost("/item/{itemId:guid}/count", async (Guid itemId, CountItemRequest request, IDocumentSession session) =>
             {
-                var stream = await session.Events.FetchForWriting<Item>(itemId);
+                var stream = await session.Events.FetchForWriting<ItemAggregate>(itemId);
                 if (stream.Aggregate is null)
                     return Results.NotFound();
 
@@ -75,7 +77,7 @@ public abstract class ItemEndpoints : IEndpoint
                 if (request.Quantity == 0)
                     return Results.BadRequest("Quantity must be greater than zero.");
 
-                var stream = await session.Events.FetchForWriting<Item>(itemId);
+                var stream = await session.Events.FetchForWriting<ItemAggregate>(itemId);
                 if (stream.Aggregate is null)
                     return Results.NotFound();
 
@@ -116,6 +118,18 @@ public abstract class ItemEndpoints : IEndpoint
             .WithDescription("Gets the current projected details of an item item.")
             .Produces<ItemDetails>()
             .Produces(StatusCodes.Status404NotFound);
+
+        endpoints.MapGet("/item/{itemId:guid}/changelog", async (
+                Guid itemId,
+                IDocumentSession session) =>
+            {
+                var changelog = await session.Events.FetchLatest<ItemChangeLog>(itemId);
+                return changelog is null ? Results.NotFound() : Results.Ok(changelog.Entries);
+            })
+            .WithName("GetItemChangeLog")
+            .WithDescription("Gets the changelog for an item showing its history of events.")
+            .Produces<List<ItemChangeLog.Entry>>()
+            .Produces(StatusCodes.Status404NotFound);
     }
 }
 
@@ -129,31 +143,34 @@ public record ItemCounted(Guid ItemId, uint ActualQuantity, string? Reason);
 public record ItemReserved(Guid ItemId, uint QuantityReserved);
 
 // Aggregates
-public record Item(Guid Id, string Name, uint Quantity)
+public record ItemAggregate(Guid Id, string Name, uint Quantity)
 {
-    public static Item Create(ItemAdded e) => new(
+    public static ItemAggregate Create(ItemAdded e) => new(
         e.ItemId,
         e.Name,
         e.Quantity
     );
 
-    public static Item Apply(Item aggregate, ItemCounted e) => aggregate with
+    public static ItemAggregate Apply(ItemAggregate aggregate, ItemCounted e) => aggregate with
     {
         Quantity = e.ActualQuantity
     };
 
-    public static Item Apply(Item aggregate, ItemChangedName e) => aggregate with
+    public static ItemAggregate Apply(ItemAggregate aggregate, ItemChangedName e) => aggregate with
     {
         Name = e.NewName
     };
 
-    public static Item Apply(Item aggregate, ItemReserved e) => aggregate with
+    public static ItemAggregate Apply(ItemAggregate aggregate, ItemReserved e) => aggregate with
     {
         Quantity = aggregate.Quantity - e.QuantityReserved
     };
 }
 
 // Projections
+
+#region ItemDetails
+
 public record ItemDetails(Guid Id, string Name, string Description, uint Quantity);
 
 public class ItemDetailsProjection : SingleStreamProjection<ItemDetails>
@@ -181,6 +198,10 @@ public class ItemDetailsProjection : SingleStreamProjection<ItemDetails>
     };
 }
 
+#endregion
+
+#region ItemSummary
+
 public record ItemSummary(Guid Id, string Name, uint Quantity);
 
 public class ItemSummaryProjection : SingleStreamProjection<ItemSummary>
@@ -206,3 +227,104 @@ public class ItemSummaryProjection : SingleStreamProjection<ItemSummary>
         Quantity = view.Quantity - e.QuantityReserved
     };
 }
+
+#endregion
+
+#region ItemChangeLog
+
+public record ItemChangeLog(Guid Id, List<ItemChangeLog.Entry> Entries)
+{
+    public record Entry(DateTimeOffset Timestamp, string EventType, List<Entry.FieldChange> Changes)
+    {
+        public record FieldChange(string FieldName, string? OldValue, string? NewValue);
+    }
+}
+
+public class ItemChangeLogProjection : SingleStreamProjection<ItemChangeLog>
+{
+    private static class FieldNames
+    {
+        public const string Name = nameof(Name);
+        public const string Quantity = nameof(Quantity);
+    }
+
+    public static ItemChangeLog Create(IEvent<ItemAdded> e)
+    {
+        return new ItemChangeLog(
+            e.StreamId,
+            [
+                new ItemChangeLog.Entry(
+                    e.Timestamp,
+                    nameof(ItemAdded),
+                    [
+                        new ItemChangeLog.Entry.FieldChange(FieldNames.Name, null, e.Data.Name),
+                        new ItemChangeLog.Entry.FieldChange(FieldNames.Quantity, null, e.Data.Quantity.ToString())
+                    ]
+                )
+            ]
+        );
+    }
+
+    public static ItemChangeLog Apply(ItemChangeLog log, IEvent<ItemChangedName> e)
+    {
+        var entry = new ItemChangeLog.Entry(
+            e.Timestamp,
+            nameof(ItemChangedName),
+            [
+                new ItemChangeLog.Entry.FieldChange(FieldNames.Name, log.GetCurrentString(FieldNames.Name), e.Data.NewName)
+            ]
+        );
+
+        return log with { Entries = [..log.Entries, entry] };
+    }
+
+    public static ItemChangeLog Apply(ItemChangeLog log, IEvent<ItemCounted> e)
+    {
+        var entry = new ItemChangeLog.Entry(
+            e.Timestamp,
+            nameof(ItemCounted),
+            [
+                new ItemChangeLog.Entry.FieldChange(FieldNames.Quantity, log.GetCurrentUInt(FieldNames.Quantity).ToString(), e.Data.ActualQuantity.ToString())
+            ]
+        );
+
+        return log with { Entries = [..log.Entries, entry] };
+    }
+
+    public static ItemChangeLog Apply(ItemChangeLog log, IEvent<ItemReserved> e)
+    {
+        var currentQuantity = log.GetCurrentUInt(FieldNames.Quantity);
+        var entry = new ItemChangeLog.Entry(
+            e.Timestamp,
+            nameof(ItemReserved),
+            [
+                new ItemChangeLog.Entry.FieldChange(FieldNames.Quantity, currentQuantity.ToString(), (currentQuantity - e.Data.QuantityReserved).ToString())
+            ]
+        );
+
+        return log with { Entries = [..log.Entries, entry] };
+    }
+}
+
+public static class ItemChangeLogExtensions
+{
+    private static T? GetCurrent<T>(this ItemChangeLog log, string fieldName, Func<string, T?> converter)
+    {
+        for (var i = log.Entries.Count - 1; i >= 0; i--)
+        {
+            foreach (var change in log.Entries[i].Changes)
+            {
+                if (change.FieldName == fieldName && change.NewValue is not null)
+                    return converter(change.NewValue);
+            }
+        }
+
+        return default;
+    }
+
+    public static string? GetCurrentString(this ItemChangeLog log, string fieldName) => log.GetCurrent<string>(fieldName, s => s);
+
+    public static uint? GetCurrentUInt(this ItemChangeLog log, string fieldName) => log.GetCurrent<uint?>(fieldName, s => uint.TryParse(s, out var v) ? v : null);
+}
+
+#endregion

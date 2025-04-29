@@ -2,6 +2,7 @@
 using Marten.Events;
 using Marten.Events.Aggregation;
 using Marten.Events.Projections;
+using Marten.Schema.Identity;
 using Marten.Storage;
 
 namespace Skeleton.Endpoints;
@@ -23,7 +24,7 @@ public abstract class OrderEndpoints : IEndpoint
 
                 foreach (var orderItem in request.OrderItems)
                 {
-                    var item = await session.Events.FetchForWriting<Item>(orderItem.ItemId);
+                    var item = await session.Events.FetchForWriting<ItemAggregate>(orderItem.ItemId);
                     if (item.Aggregate == null)
                         return Results.BadRequest($"Item with id {orderItem.ItemId} does not exist.");
 
@@ -34,9 +35,9 @@ public abstract class OrderEndpoints : IEndpoint
                 if (insufficient.Count != 0)
                     return Results.BadRequest($"Not enough stock for: {string.Join(", ", insufficient)}");
 
-                var orderId = Guid.NewGuid();
+                var orderId = CombGuidIdGeneration.NewGuid();
                 var orderPlaced = new OrderPlaced(orderId, request.OrderItems, DateTime.UtcNow);
-                session.Events.StartStream<Order>(orderId, orderPlaced);
+                session.Events.StartStream<OrderAggregate>(orderId, orderPlaced);
 
                 foreach (var item in request.OrderItems)
                 {
@@ -81,11 +82,11 @@ public record OrderPlaced(Guid OrderId, List<OrderItem> Items, DateTime PlacedAt
 public record OrderConfirmed(Guid OrderId);
 
 // 🧱 Aggregate
-public record Order(Guid Id, List<OrderItem> Items, bool IsConfirmed)
+public record OrderAggregate(Guid Id, List<OrderItem> Items, bool IsConfirmed)
 {
-    public static Order Create(OrderPlaced e) => new(e.OrderId, e.Items, false);
+    public static OrderAggregate Create(OrderPlaced e) => new(e.OrderId, e.Items, false);
 
-    public static Order Apply(Order current, OrderConfirmed e) => current with { IsConfirmed = true };
+    public static OrderAggregate Apply(OrderAggregate current, OrderConfirmed e) => current with { IsConfirmed = true };
 }
 
 // 🔭 MultiStreamProjection viewmodel

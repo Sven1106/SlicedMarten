@@ -14,8 +14,10 @@ builder.Services.AddMarten(opts =>
         opts.Connection(builder.Configuration.GetConnectionString("Marten"));
         opts.Projections.Add<ItemDetailsProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<ItemSummaryProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.Add<ItemChangeLogProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<ItemToOrdersProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<OrderOverviewProjection>(ProjectionLifecycle.Async);
+
 
         opts.AutoCreateSchemaObjects = AutoCreate.All;
         opts.Projections.UseIdentityMapForAggregates = true;

@@ -1,4 +1,5 @@
 ﻿using Marten;
+using Marten.Schema.Identity;
 
 namespace WepApi.Features;
 
@@ -12,7 +13,7 @@ public class RegisterUserHandler(IDocumentSession session)
 {
     public async Task<RegisterUserResponse> Handle(RegisterUserRequest request)
     {
-        var @event = new UserRegistered(Guid.NewGuid(), request.FirstName, request.LastName, request.Email);
+        var @event = new UserRegistered(CombGuidIdGeneration.NewGuid(), request.FirstName, request.LastName, request.Email);
         session.Events.StartStream(@event.UserId, @event);
         await session.SaveChangesAsync();
         return new RegisterUserResponse(@event.UserId);

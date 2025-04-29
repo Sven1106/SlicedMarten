@@ -53,6 +53,11 @@ projection types.
   → Chose PostgreSQL `LISTEN/NOTIFY`on projection tables to ensure signals are sent only after projections are fully
   updated, regardless of projection lifecycle.
 
+- [x] Create changelog from events.  
+  → All changes are logged as `FieldChange` objects directly from events. The current state is dynamically derived by traversing the changelog entries in reverse — no temporary or cached state is held inside the projection.
+ 
+- [ ] DTO's vs Projection that has Ids that you need for a .
+
 - [ ] Group by changable identifier in Multistream. E.g Name with counts on.
 
 - [ ] Add a projection that gets data from other services.
