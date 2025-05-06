@@ -6,7 +6,7 @@ public abstract class AdminEndpoints : IEndpoint
 {
     public static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/admin/rebuild-projections", async (List<ProjectionEnum> projections, CancellationToken cancellationToken, IDocumentStore store) =>
+        endpoints.MapPost("/admin/projections/rebuild", async (List<ProjectionEnum> projections, CancellationToken cancellationToken, IDocumentStore store) =>
             {
                 var daemon = await store.BuildProjectionDaemonAsync();
                 foreach (var projection in projections.Select(projectionViewModel => projectionViewModel.GetProjectionViewModelName()))
@@ -23,7 +23,7 @@ public abstract class AdminEndpoints : IEndpoint
             .WithDescription("Rebuilds all projections from the event store.")
             .Produces(StatusCodes.Status200OK);
 
-        endpoints.MapPost("/admin/rebuild-stream/{streamId:guid}", async (List<SingleStreamProjectionEnum> projections, Guid streamId, IDocumentStore store) =>
+        endpoints.MapPost("/admin/projections/{streamId:guid}/rebuild", async (List<SingleStreamProjectionEnum> projections, Guid streamId, IDocumentStore store) =>
             {
                 try
                 {

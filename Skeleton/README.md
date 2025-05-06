@@ -62,6 +62,8 @@ projection types.
 
 - [ ] Add a projection that gets data from other services.
 
+- [ ] How should parallel created streams be constrained.
+
 - [ ] Add upcasting for versioned events
 
 - [ ] Handle projection deletions or cleanup when related aggregates are removed.

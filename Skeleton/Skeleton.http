@@ -1,6 +1,12 @@
 @WepApi_HostAddress = http://localhost:5227
 
-GET {{WepApi_HostAddress}}/weatherforecast/
+POST {{WepApi_HostAddress}}/item
+Content-Type: application/json
 Accept: application/json
 
-###
+{
+  "name": "HP Fury G8",
+  "description": "Workstation laptop",
+  "tags": ["Laptop"],
+  "quantity": 100
+}
