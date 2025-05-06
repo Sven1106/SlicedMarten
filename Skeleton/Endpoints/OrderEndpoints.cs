@@ -125,7 +125,7 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
             .Select(i => i.ItemId == e.ItemId ? i with { Name = e.NewName } : i)
             .ToList();
 
-        return view with { Items = updatedItems };
+        return view with { Items = updatedItems, EventsApplied = view.EventsApplied + 1 };
     }
 
     private class OrderSlicer : IEventSlicer<OrderOverview, Guid>
@@ -165,15 +165,19 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
                     }
                     case IEvent<ItemChangedName> itemChanged:
                     {
-                        var lookup = await querySession.LoadAsync<ItemIdToOrderIds>(itemChanged.Data.ItemId);
-                        if (lookup is null) break;
-                        foreach (var orderId in lookup.OrderIds)
+                        var orderPlacedEvents = await querySession.Events.QueryRawEventDataOnly<OrderPlaced>()
+                            .Where(op => op.Items.Any(i => i.ItemId == itemChanged.Data.ItemId))
+                            .ToListAsync();
+                        foreach (var orderPlaced in orderPlacedEvents)
                         {
-                            var existing = await querySession.LoadAsync<OrderOverview>(orderId);
-                            if (existing is null) continue;
-                            sliceGroup.AddEvent(orderId, itemChanged);
+                            var existing = await querySession.LoadAsync<OrderOverview>(orderPlaced.OrderId);
+                            if (existing is null)
+                            {
+                                Console.WriteLine($"[WARN] Missing OrderOverview for OrderId {orderPlaced.OrderId} while handling ItemChangedName for ItemId {itemChanged.Data.ItemId}.");
+                                continue;
+                            }
+                            sliceGroup.AddEvent(orderPlaced.OrderId, itemChanged);
                         }
-
                         break;
                     }
                 }
@@ -182,30 +186,4 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
             return [sliceGroup];
         }
     }
-}
-
-public record ItemIdToOrderIds(Guid Id, List<Guid> OrderIds);
-
-public class ItemToOrdersProjection : MultiStreamProjection<ItemIdToOrderIds, Guid>
-{
-    public ItemToOrdersProjection() => Identities<OrderPlaced>(e => e.Items.Select(i => i.ItemId).ToList());
-
-    public static ItemIdToOrderIds Create(IEvent<OrderPlaced> e) => new(
-        Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
-        [e.Data.OrderId]
-    );
-
-
-    public static ItemIdToOrderIds Apply(ItemIdToOrderIds view, IEvent<OrderPlaced> e)
-    {
-        if (view.OrderIds.Contains(e.Data.OrderId)) return view;
-        var newOrderIds = view.OrderIds.Append(e.Data.OrderId).ToList();
-
-        return view with
-        {
-            OrderIds = newOrderIds
-        };
-    }
-
-    // TODO: Figure out when an order should be removed from an item in this lookup table. Will it be too business oriented?
 }

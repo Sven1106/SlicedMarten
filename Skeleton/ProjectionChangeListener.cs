@@ -6,7 +6,7 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
 {
     private NpgsqlConnection? _conn;
 
-    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var connString = configuration.GetConnectionString("Marten")
                          ?? throw new InvalidOperationException("Missing connection string 'Marten'.");
@@ -160,12 +160,11 @@ public class ProjectionChangeListener(ILogger<ProjectionChangeListener> logger, 
         {
             case ProjectionEnum.ItemDetails:
             case ProjectionEnum.ItemSummary:
-            case ProjectionEnum.ItemIdToOrderIds:
+            case ProjectionEnum.ItemChangeLog:
                 logger.LogInformation("Projection '{projection}' updated for ID: {id}", projectionMetadata.ProjectionEnum.Value.GetProjectionViewModelName(), e.Payload);
                 // TODO: Send to SignalR/SSE/etc.
                 break;
             case ProjectionEnum.OrderOverview:
-
                 break;
         }
     }
