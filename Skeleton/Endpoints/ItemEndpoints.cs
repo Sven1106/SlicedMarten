@@ -6,7 +6,24 @@ using Marten.Schema.Identity;
 namespace Skeleton.Endpoints;
 
 // 📥 Request models
-public record AddItemRequest(string Name, string Description, List<ItemTag> Tags, uint Quantity);
+public record AddItemRequest
+{
+    public AddItemRequest(string Name, string Description, List<ItemTag> Tags, uint Quantity)
+    {
+        this.Name = Name;
+        this.Description = Description;
+        this.Tags = Tags;
+        this.Quantity = Quantity;
+    }
+    /// <example>HF Fury G8</example>
+    public string Name { get; init; }
+    /// <example>Workstation laptop</example>
+    public string Description { get; init; }
+    /// <example>Laptop</example>
+    public List<ItemTag> Tags { get; init; }
+    /// <example>100</example>
+    public uint Quantity { get; init; }
+}
 
 public record CountItemRequest(uint ActualQuantity, string? Reason);
 

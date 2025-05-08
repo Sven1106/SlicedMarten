@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json.Serialization;
 using JasperFx.CodeGeneration;
 using Marten;
@@ -16,6 +17,7 @@ builder.Services.AddMarten(opts =>
         opts.Projections.Add<ItemDetailsProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<ItemSummaryProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<ItemChangeLogProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.Add<UserProjectFlatTableProjection>(ProjectionLifecycle.Inline);
         opts.Projections.Add<OrderOverviewProjection>(ProjectionLifecycle.Async);
 
         // opts.Projections.Add<ItemTagUsageProjection>(ProjectionLifecycle.Async);
@@ -33,7 +35,10 @@ builder.Services.AddMarten(opts =>
     .AddAsyncDaemon(DaemonMode.Solo);
 builder.Services.AddHostedService<ProjectionChangeListener>();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(o =>
+{
+    o.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml"));
+});
 builder.Services.ConfigureHttpJsonOptions(options => { options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 builder.Services.Configure<JsonOptions>(options => { options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 

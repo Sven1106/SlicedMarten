@@ -2,8 +2,10 @@
 using Marten.Events;
 using Marten.Events.Aggregation;
 using Marten.Events.Projections;
+using Marten.Events.Projections.Flattened;
 using Marten.Schema.Identity;
 using Marten.Storage;
+using Weasel.Postgresql.Tables;
 
 namespace Skeleton.Endpoints;
 
@@ -246,5 +248,47 @@ public static class EventExtensions
         }
 
         return (matched, rest);
+    }
+}
+
+public record ItemIdToOrderIds(Guid Id, List<Guid> OrderIds);
+
+public class ItemToOrdersProjection : MultiStreamProjection<ItemIdToOrderIds, Guid>
+{
+    public ItemToOrdersProjection() => Identities<OrderPlaced>(e => e.Items.Select(i => i.ItemId).ToList());
+
+    public static ItemIdToOrderIds Create(IEvent<OrderPlaced> e) => new(
+        Guid.Empty, // Martern overwrites this behind the scenes with slice-id (ItemId), so it really doesnt matter what is written here.
+        [e.Data.OrderId]
+    );
+
+
+    public static ItemIdToOrderIds Apply(ItemIdToOrderIds view, IEvent<OrderPlaced> e)
+    {
+        if (view.OrderIds.Contains(e.Data.OrderId)) return view;
+        var newOrderIds = view.OrderIds.Append(e.Data.OrderId).ToList();
+
+        return view with
+        {
+            OrderIds = newOrderIds
+        };
+    }
+
+    // TODO: Figure out when an order should be removed from an item in this lookup table. Will it be too business oriented?
+}
+public class UserProjectFlatTableProjection : FlatTableProjection
+{
+    public UserProjectFlatTableProjection() : base("user_project_mapping", SchemaNameSource.EventSchema)
+    {
+        Table.AddColumn<Guid>("item_id").AsPrimaryKey();
+        Table.AddColumn<List<Guid>>("order_ids").NotNull();
+
+        TeardownDataOnRebuild = true;
+
+        Project<OrderPlaced>(map =>
+        {
+            map.Map(x => x.OrderId);
+            map.Map(x => x.Items.Select(orderItem => orderItem.ItemId));
+        });
     }
 }
