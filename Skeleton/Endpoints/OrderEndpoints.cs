@@ -128,62 +128,123 @@ public class OrderOverviewProjection : MultiStreamProjection<OrderOverview, Guid
         return view with { Items = updatedItems, EventsApplied = view.EventsApplied + 1 };
     }
 
+    public static OrderOverview Apply(OrderOverview view, ItemReserved e)
+    {
+        return view with { Items = view.Items, EventsApplied = view.EventsApplied + 1 };
+    }
+
     private class OrderSlicer : IEventSlicer<OrderOverview, Guid>
     {
         public ValueTask<IReadOnlyList<EventSlice<OrderOverview, Guid>>> SliceInlineActions(IQuerySession session, IEnumerable<StreamAction> streams) =>
             throw new NotImplementedException();
 
-        public async ValueTask<IReadOnlyList<TenantSliceGroup<OrderOverview, Guid>>> SliceAsyncEvents(IQuerySession querySession, List<IEvent> events)
+        public async ValueTask<IReadOnlyList<TenantSliceGroup<OrderOverview, Guid>>> SliceAsyncEvents(
+            IQuerySession querySession,
+            List<IEvent> events
+            // On Rebuild: Gets all events that are specified with Create and Apply in the projection
+            // On SaveChangesAsync: Only gets the events persisted on SaveChangesAsync and specified with Create and Apply in the projection
+        )
         {
+            // Cases:
+            // 1. Rebuild projections
+            // 2. OrderPlaced
+            // 3. A stream an order is referencing is modified.
+
             var tenant = Tenant.ForDatabase(querySession.Database);
             var sliceGroup = new TenantSliceGroup<OrderOverview, Guid>(tenant);
             var streamIdToStreamEvents = new Dictionary<Guid, IReadOnlyList<IEvent>>();
-
-            foreach (var @event in events)
+            var (createEvents, applyEvents) = events.SplitByTypes(typeof(OrderPlaced)); //TODO: only add stream events that matches the events specified with Create in the projection
+            if (createEvents.Count != 0)
             {
-                switch (@event)
+                foreach (var createEvent in createEvents)
                 {
-                    case IEvent<OrderPlaced> orderPlaced:
+                    switch (createEvent)
                     {
-                        sliceGroup.AddEvent(orderPlaced.Data.OrderId, orderPlaced);
-
-                        foreach (var orderItem in orderPlaced.Data.Items)
+                        case IEvent<OrderPlaced> placed:
                         {
-                            if (streamIdToStreamEvents.TryGetValue(orderItem.ItemId, out var streamEvents) == false)
+                            sliceGroup.AddEvent(placed.Data.OrderId, placed);
+
+                            foreach (var orderItem in placed.Data.Items)
                             {
-                                streamEvents = await querySession.Events.FetchStreamAsync(orderItem.ItemId);
-                                streamIdToStreamEvents[orderItem.ItemId] = streamEvents;
+                                if (streamIdToStreamEvents.TryGetValue(orderItem.ItemId, out var streamEvents) == false) // Reference to other stream
+                                {
+                                    streamEvents = await querySession.Events.FetchStreamAsync(orderItem.ItemId); // Will this scale?
+                                    streamIdToStreamEvents[orderItem.ItemId] = streamEvents;
+                                }
+
+                                foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId])
+                                {
+                                    switch (streamEvent)
+                                    {
+                                        //TODO: only add stream events that matches the events specified with Apply in the projection
+                                        case IEvent<ItemAdded>:
+                                        case IEvent<ItemChangedName>:
+                                        case IEvent<ItemReserved>:
+                                            sliceGroup.AddEvent(placed.Data.OrderId, streamEvent);
+                                            break;
+                                    }
+                                }
                             }
 
-                            foreach (var streamEvent in streamIdToStreamEvents[orderItem.ItemId])
-                            {
-                                sliceGroup.AddEvent(orderPlaced.Data.OrderId, streamEvent);
-                            }
+                            break;
                         }
-
-                        break;
                     }
-                    case IEvent<ItemChangedName> itemChanged:
+                }
+            }
+            else
+            {
+                foreach (var applyEvent in applyEvents)
+                {
+                    switch (applyEvent)
                     {
-                        var orderPlacedEvents = await querySession.Events.QueryRawEventDataOnly<OrderPlaced>()
-                            .Where(op => op.Items.Any(i => i.ItemId == itemChanged.Data.ItemId))
-                            .ToListAsync();
-                        foreach (var orderPlaced in orderPlacedEvents)
+                        //TODO: only add stream events that matches the events specified with Apply in the projection
+                        case IEvent<ItemChangedName> itemChanged:
                         {
-                            var existing = await querySession.LoadAsync<OrderOverview>(orderPlaced.OrderId);
-                            if (existing is null)
+                            var orderPlacedEvents = await querySession.Events
+                                .QueryRawEventDataOnly<OrderPlaced>() //TODO: only add stream events that matches the events specified with Create in the projection
+                                .Where(op => op.Items.Any(i => i.ItemId == itemChanged.Data.ItemId))
+                                .ToListAsync();
+                            foreach (var orderPlaced in orderPlacedEvents)
                             {
-                                Console.WriteLine($"[WARN] Missing OrderOverview for OrderId {orderPlaced.OrderId} while handling ItemChangedName for ItemId {itemChanged.Data.ItemId}.");
-                                continue;
+                                sliceGroup.AddEvent(orderPlaced.OrderId, itemChanged);
                             }
-                            sliceGroup.AddEvent(orderPlaced.OrderId, itemChanged);
+
+                            break;
                         }
-                        break;
+                        case IEvent<ItemAdded>:
+                        case IEvent<ItemReserved>:
+                            break;
                     }
                 }
             }
 
             return [sliceGroup];
         }
+    }
+}
+
+public static class EventExtensions
+{
+    public static (List<IEvent> matched, List<IEvent> rest) SplitByTypes(
+        this IEnumerable<IEvent> events,
+        params Type[] targetTypes)
+    {
+        var matched = new List<IEvent>();
+        var rest = new List<IEvent>();
+        var typeSet = new HashSet<Type>(targetTypes);
+
+        foreach (var e in events)
+        {
+            var dataType = e.GetType().GetInterfaces()
+                .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEvent<>))
+                ?.GetGenericArguments()[0];
+
+            if (dataType != null && typeSet.Contains(dataType))
+                matched.Add(e);
+            else
+                rest.Add(e);
+        }
+
+        return (matched, rest);
     }
 }
